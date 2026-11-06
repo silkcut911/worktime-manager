@@ -1,0 +1,50 @@
+# main에 올라올 때마다: 빌드 → 회귀 테스트(폰 폭 384px) → 통과하면 GitHub Pages로 배포
+# 테스트가 실패하면 배포하지 않으므로 폰 앱은 이전 버전 그대로 유지된다.
+name: 빌드·테스트·배포
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 빌드
+        run: node build.js
+      - name: 테스트 준비 (한글 글꼴, puppeteer-core)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+          npm i --no-save puppeteer-core
+      - name: 테스트
+        run: node tools/calc-test.js && node tools/smoke-test.js
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
