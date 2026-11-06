@@ -40,7 +40,8 @@ input.tnum { text-align: center; font-size: 19px; font-weight: 600; padding: 7px
 .grid5:has(.tp) { grid-template-columns: repeat(3, 1fr); }
 /* 날짜 카드는 작게: 오늘 화면에서 전일·오늘·내일이 한 화면에 */
 .dcard { padding: 7px 10px; margin-bottom: 8px; }
-.dcard > .row { gap: 5px; }
+.dcard > .row { gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.dcard > .row > * { flex-shrink: 0; } .dcard > .row > .badge[style] { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* 한 줄 유지: 자리가 모자라면 세트 이름만 줄임(…) */
 .dcard > .row b { font-size: 14px; }
 .dcard .badge { font-size: 11px; padding: 0 5px; }
 .dcard button.sm { padding: 1px 7px; font-size: 12px; }
@@ -79,6 +80,8 @@ input.tnum { text-align: center; font-size: 19px; font-weight: 600; padding: 7px
 .dcard.d-today > .row { background: var(--navy); }
 /* 시간 칸 아래 결과 칸: 시간 칸과 같은 크기 */
 .res b { display: block; text-align: center; font-size: 19px; font-weight: 700; padding: 7px 2px; border-radius: 8px; background: #f3f4f6; border: 1px solid transparent; line-height: 1.45; }
+.res button.pri:disabled { background: #e5e7eb; border-color: #e5e7eb; color: #9ca3af; opacity: 1; } /* 저장할 것 없음 */
+.res button.pri.soft { background: #c9d5e6; border-color: #c9d5e6; color: var(--navy); } /* 미입력 지난날: 계획값 그대로 저장 가능 */
 .res button { width: 100%; font-size: 17px; padding: 7px 2px; line-height: 1.45; border: 1px solid var(--navy); }
 label { font-size: 13px; color: var(--muted); display: block; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }

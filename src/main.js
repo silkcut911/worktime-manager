@@ -38,6 +38,6 @@ document.addEventListener('focusout', (e) => {
 });
 // 날짜가 바뀐 채로 열려 있으면 다시 그림
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { WT.ensureMonth(db, tym()); save(); render(); } });
-// 저장하지 않은 계획이 있으면 창을 닫기 전에 묻기
-addEventListener('beforeunload', (e) => { if (ui.draft && ui.draft.dirty) e.preventDefault(); });
+// 저장하지 않은 계획·날짜 카드 값이 있으면 창을 닫기 전에 묻기
+addEventListener('beforeunload', (e) => { if ((ui.draft && ui.draft.dirty) || pendingForms().length) e.preventDefault(); });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');

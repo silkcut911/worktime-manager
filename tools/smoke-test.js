@@ -201,6 +201,7 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   // 7. 2개월 지난 달 수정 경고 (오늘 2027-01-10 에 2026-11 수정)
   await page.evaluateOnNewDocument(() => { window.WT_TODAY = '2027-01-10'; });
   await open('#/today?d=2026-11-09');
+  await page.$eval('#d-add', (e) => { e.value = '0:05'; e.dispatchEvent(new Event('input', { bubbles: true })); }); // 값을 바꿔야 [저장]이 켜짐
   dialogs.length = 0;
   await click('[data-act=saveForm][data-pre="d-"]'); await wait(100);
   check('2개월 지난 달 고칠 때 확인 창', dialogs.some((m) => m.includes('2개월 이상 지난 달')), dialogs[0]);
@@ -249,8 +250,59 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   dialogs.length = 0;
   await click('[data-act=saveForm][data-pre="d-"]'); await wait(100);
   check('휠 입력 저장', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[9].a)) === '[540,1215,100,0]', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[9].a)));
+  // [저장]은 저장할 것이 있을 때만 켜짐
+  await open('#/today?d=2026-11-09');
+  const btn = '.dform[data-date="2026-11-09"] [data-act=saveForm]', dis = () => page.$eval(btn, (e) => e.disabled);
+  const fpre = await page.$eval('.dform[data-date="2026-11-09"]', (e) => e.dataset.pre);
+  const b0 = await dis();
+  await page.$eval('#' + fpre + 'add', (e) => { e.value = '0:30'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  const b1 = await dis();
+  await page.$eval('#' + fpre + 'add', (e) => { e.value = '0:00'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  check('저장 버튼: 같으면 꺼짐 · 바뀌면 켜짐 · 되돌리면 꺼짐', b0 && !b1 && (await dis()), `${b0} ${b1} ${await dis()}`);
+  await page.evaluate(() => { db.months['2026-11'].days[5] = { p: [590, 1122, 45, 0] }; save(); }); // 11/5: 계획만 있고 실제 없음
+  await open('#/today?d=2026-11-05');
+  const b5 = () => page.$eval('.dform[data-date="2026-11-05"] [data-act=saveForm]', (e) => e.disabled);
+  const c0 = await b5(), s0 = await page.$eval('.dform[data-date="2026-11-05"] [data-act=saveForm]', (e) => e.classList.contains('soft'));
+  await page.$eval('.dform[data-date="2026-11-05"] [id$=add]', (e) => { e.value = '0:10'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  const soft5 = () => page.$eval('.dform[data-date="2026-11-05"] [data-act=saveForm]', (e) => e.classList.contains('soft'));
+  await page.$eval('.dform[data-date="2026-11-05"] [id$=out]', (e) => { e.value = ''; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  const e5 = [await b5(), await soft5()];
+  await page.$eval('.dform[data-date="2026-11-05"] [id$=out]', (e) => { e.value = '18:42'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  check('저장 버튼: 퇴근 빈칸이면 흐린색(켜짐)', !e5[0] && e5[1], JSON.stringify(e5));
+  check('저장 버튼: 미입력 지난날은 안 바꿔도 흐린색으로 켜짐, 바꾸면 남색', !c0 && s0 && !(await b5()) && !(await soft5()), `${c0} ${s0} ${await b5()} ${await soft5()}`);
+  // 한 카드를 저장해도 다른 카드에 넣던 값은 남음, 다른 탭으로 갈 때 묻기
+  await open('#/today?d=2026-11-09');
+  const fd = '.dform[data-pre="f-"]', fdate = await page.$eval(fd, (f) => f.dataset.date);
+  const put = (sel, v) => page.$eval(sel, (e, v) => { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+  await put('#f-in', '9:00'); await put('#f-out', '18:00'); await put('#d-add', '0:15');
+  await click('[data-act=saveForm][data-pre="d-"]'); await wait(150);
+  const kept = await page.$eval(fd, (f) => [f.querySelector('#f-in').value, f.querySelector('#f-out').value, f.querySelector('[data-act=saveForm]').disabled, f.querySelector('[data-act=saveForm]').classList.contains('soft')]);
+  check('다른 카드 저장 뒤에도 넣던 값·남색 버튼 유지', JSON.stringify(kept) === '["9:00","18:00",false,false]', JSON.stringify(kept));
+  check('다른 카드 값은 저장 안 됨', await page.evaluate((d) => { const M = db.months[d.slice(0, 7)]; const a = M && M.days[+d.slice(8)] && M.days[+d.slice(8)].a; return !a || a[0] !== 540 || a[1] !== 1080; }, fdate));
+  dialogs.length = 0;
+  await page.evaluate(() => { location.hash = '#/plan'; }); await wait(150);
+  check('저장 안 한 값 두고 다른 탭 → 확인 창', dialogs.some((m) => m.includes('저장하지 않은 값')), dialogs[0]);
   const w9 = await page.evaluate(() => document.documentElement.scrollWidth);
   check('휠 입력도 384px 안', w9 <= 384, String(w9));
+
+  // 10. 달 중간(12/10)에 처음 열어 아무것도 없을 때: 세트로 계획 채움 → 밀린 날을 하나씩 확정 / 고쳐서 확정
+  await page.evaluateOnNewDocument(() => { window.WT_TODAY = '2026-12-10'; });
+  const fresh = WT.newDB(); fresh.inputMode = 'wheel';
+  WT.fillEmpty(fresh, '2026-12', fresh.sets.find((x) => x.id === 'normal'));
+  await setDB(fresh);
+  await open('#/today');
+  const chips = await page.$$eval('.misscard .mchip', (b) => b.map((x) => x.textContent));
+  check('12/10: 밀린 날 칩 6개(12/1~12/8 평일, 전일 12/9는 카드)', chips.length === 6 && chips[0].startsWith('12/1'), chips.join(' '));
+  await click('.misscard .mchip');
+  const card = '.dform[data-date="2026-12-01"]';
+  const st1 = await page.$eval(card, (f) => [f.querySelector('[id$=in]').value, f.querySelector('[data-act=saveForm]').classList.contains('soft')]);
+  check('밀린 날 카드: 계획값이 채워져 있고 [저장] 흐린 남색', JSON.stringify(st1) === '["9:50",true]', JSON.stringify(st1));
+  await click(card + ' [data-act=saveForm]'); await wait(150);
+  check('계획대로 확정 → 실제값 저장, 칩 하나 줄어듦', JSON.stringify(await page.evaluate(() => db.months['2026-12'].days[1].a)) === '[590,1122,45,0]' && (await page.$$('.misscard .mchip')).length === 5);
+  await click('.misscard .mchip');
+  await page.$eval('.dform[data-date="2026-12-02"] [id$=out]', (e) => { e.value = '19:30'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await click('.dform[data-date="2026-12-02"] [data-act=saveForm]'); await wait(150);
+  check('고쳐서 확정 → 고친 값 저장', JSON.stringify(await page.evaluate(() => db.months['2026-12'].days[2].a)) === '[590,1170,45,0]');
 
   check('끝까지 화면 오류 없음', errors.length === 0, errors.join(' | '));
   await browser.close();

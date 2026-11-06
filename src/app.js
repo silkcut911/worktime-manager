@@ -117,8 +117,19 @@ function route() {
 }
 function go(h) { if (location.hash === h) render(); else location.hash = h; }
 const VIEWS = { today: vToday, plan: vPlan, list: vList, month: vMonth, settings: vSettings };
+// 날짜 카드에 넣고 아직 저장 안 한 값(칸 값 ≠ 처음 그린 값): 다시 그려도 남기고, 다른 탭으로 갈 때는 묻는다
+function pendingForms() {
+  return [...document.querySelectorAll('.dform')].filter((f) => [...f.querySelectorAll('input.tnum')].some((e) => e.value !== e.defaultValue))
+    .map((f) => ({ date: f.dataset.date, k: f.dataset.k, vals: [...f.querySelectorAll('input.tnum')].map((e) => [e.id.slice(f.dataset.pre.length), e.value]) }));
+}
 function render() {
   const { page, q } = route();
+  let pend = pendingForms();
+  if (pend.length && ui.page && page !== ui.page) {
+    if (!confirm(`저장하지 않은 값이 있습니다: ${pend.map((x) => dLabel(x.date)).join(', ')}
+버리고 이동할까요?`)) { history.replaceState(null, '', ui.hash); return; }
+    pend = [];
+  }
   if (ui.draft && !(page === 'plan' && (q.m || tym()) === ui.draft.ym)) { // 계획 임시본을 두고 다른 화면으로 갈 때
     if (ui.draft.dirty && confirm(`${mLabel(ui.draft.ym)} 계획을 저장하지 않았습니다. 저장할까요?\n(취소를 누르면 변경을 버립니다)`)) commitPlan(true);
     ui.draft = null; ui.editDay = null;
@@ -127,6 +138,11 @@ function render() {
   const t = today();
   $('#hdate').textContent = `${t.slice(0, 4)}년 ${+t.slice(5, 7)}월 ${+t.slice(8)}일 (${DOW[WT.dow(t.slice(0, 7), +t.slice(8))]})`;
   $('#view').innerHTML = (VIEWS[page] || vToday)(q);
+  for (const x of pend) { // 저장 안 한 값 되살리기(방금 저장한 카드는 저장값과 같아서 그대로)
+    const f = $(`.dform[data-date="${x.date}"][data-k="${x.k}"]`);
+    if (f) for (const [id, v] of x.vals) { const e = $('#' + f.dataset.pre + id); if (e) e.value = v; }
+  }
+  ui.hash = location.hash || '#/today';
   const [top, bottom] = banners();
   $('#banners').innerHTML = top; $('#banners2').innerHTML = bottom;
   $('#slack').innerHTML = slackBar(page);
@@ -176,7 +192,7 @@ function dayCard(date, pre, stay) {
   const tone = { '오늘 ': ' d-today', '전일 ': ' d-prev', '내일 ': ' d-next' }[when] || ''; // 오늘이 가장 눈에 띄고 내일이 가장 흐리게
   let h = `<div class="card dcard${tone}"><div class="row"><b>${when}${dLabel(date)} ${isAct ? '실제' : '계획'}</b><span class="badge">${WT.KIND_NAME[kind]}${kind === 'H' && hol ? ' · ' + esc(hol) : ''}</span>` +
     `${set ? `<span class="badge" style="background:${esc(set.color)}">${esc(set.name)}</span>` : ''}<span class="sp"></span>` +
-    `${isAct ? (day.a ? `<span class="badge pos">입력됨</span><button class="sm warn" data-act="clearDay" data-date="${date}">지우기</button>` : kind === 'W' ? '<span class="badge neg">미입력</span>' : '') : ''}</div>`;
+    `${isAct ? (day.a ? '<span class="badge pos">입력됨</span>' : kind === 'W' ? '<span class="badge neg">미입력</span>' : '') : ''}</div>`;
   if (kind === 'F') return h + '<div class="muted" style="margin-top:6px">패밀리데이: 입력할 것이 없습니다 (의무 8:00, 실근무 0:00)</div></div>';
   if (!isAct && kind !== 'W') return h + `<div class="muted" style="margin-top:6px">${kind === 'O' ? '주말' : '휴일'}이라 계획이 없습니다.</div></div>`;
   const v = (isAct ? day.a || day.p : day.p) || [];
@@ -224,6 +240,11 @@ function formPreview(f) {
   const { pre, date, k } = f.dataset, raw = fourVals(pre), v = checkFour(raw), ok = typeof v !== 'string';
   const r = ok ? slackIf(date, v, k) : null, wt = ok ? v[1] - v[0] - v[2] : null;
   const put = (cls, val, sign) => { const b = f.querySelector(`.${cls} b`); b.textContent = val; b.className = sign == null ? '' : signCls(sign); };
+  // [저장]: 값을 바꾸면 남색. 안 바꿨으면 꺼짐(처음 보여 준 값 = 지난날은 실제, 없으면 계획 / 오늘·앞날은 계획).
+  // 흐린색(켜짐): 실제값이 아직 없는 지난날을 안 바꿨을 때(누르면 계획값 그대로 실제로 저장), 값이 비었거나 잘못됐을 때(입력할 것이 남음, 누르면 이유 안내)
+  const day = WT.peekMonth(db, date.slice(0, 7)).days[+date.slice(8)] || {}, st = k === 'a' ? day.a || day.p : day.p;
+  const same = !!st && ok && v.every((x, i) => x === (st[i] || 0)), need = k === 'a' && !day.a, sb = f.querySelector('[data-act=saveForm]');
+  sb.disabled = ok && same && !need; sb.classList.toggle('soft', !ok || (same && need));
   put('r-wt', ok ? F(wt) : '-'); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-gh', ok ? F(r.gh, true) : '-', ok ? r.gh : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
   const short = ok ? WT.exShort(v) : 0, err = !ok && raw[0] != null && raw[1] != null ? v : '';
   f.querySelector('.pv').innerHTML =
@@ -459,12 +480,6 @@ const ACT = {
     toast(`${k === 'a' ? '저장했습니다' : '계획을 고쳤습니다'}${short ? ` ⚠ 제외 최소 ${F(short)} 미달` : ''} · ${sl}`, !!short);
     if (stay) { ui.open = null; return render(); }
     go('#/today');
-  },
-  clearDay(el) {
-    const date = el.dataset.date, ym = date.slice(0, 7), d = +date.slice(8);
-    if (!guardOld(ym) || !confirm(`${dLabel(date)} 실제값을 지울까요?`)) return;
-    const M = WT.ensureMonth(db, ym), day = { ...M.days[d] }; delete day.a;
-    WT.setDay(M, d, day); changed(ym); render();
   },
   confirmMonth(el) { draftDB(el.dataset.m); ui.draft.M.ok = true; ui.draft.dirty = true; render(); },
   mode(el) { ui.mode = el.dataset.v; ui.editDay = null; render(); },
