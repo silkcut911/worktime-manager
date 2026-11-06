@@ -209,8 +209,8 @@ function dayCard(date, pre, stay) {
   const auto = kind === 'W' && (!set || set.id === 'normal') ? ' data-auto="1"' : ''; // 출근 입력 시 퇴근·제외 자동
   const res = (cls, label, span) => `<div class="res ${cls}"${span ? ' style="grid-column:span 2"' : ''}><label>${label}</label><b>-</b></div>`;
   return h + `<div class="dform" data-pre="${pre}" data-date="${date}" data-k="${k}"${auto}${stay ? ' data-stay="1"' : ''} style="margin-top:4px">
-    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}<div class="thin">${timeField(pre + 'ex', '제외', v[2], true)}</div>${res('r-wt thin', '실근무')}${res('r-day', '일누적')}</div>
-    <div class="grid5" style="margin-top:4px"><div></div><div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-gh thin', '일누적(GH)')}${res('r-end thin', '월누적')}
+    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}<div class="thin">${timeField(pre + 'ex', '제외', v[2], true)}</div>${res('r-ot thin', '일추가')}${res('r-day', '일누적')}</div>
+    <div class="grid5" style="margin-top:4px">${res('r-wt thin', '실근무')}<div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-gh thin', '일누적(GH)')}${res('r-end thin', '월누적')}
       <div class="res"><label>&nbsp;</label><button class="pri" data-act="saveForm" data-pre="${pre}" data-date="${date}" data-k="${k}"${stay ? ' data-stay="1"' : ''}>저장</button></div></div>
     <div class="pv"></div></div></div>`;
 }
@@ -247,7 +247,7 @@ function fourPreview(el, raw, std) {
   el.innerHTML = `실근무 <b>${F(wt)}</b> (${F(wt - (std == null ? WT.STD : std), true)})${v[3] ? ` · 추가제외 반영 ${F(wt - v[3])}` : ''}` +
     (short ? `<div class="warn-t">⚠ ${exMsg(v)}</div>` : '');
 }
-// 날짜 칸 결과(시간 칸과 같은 크기): 실근무 · 일누적(그날까지) · 일누적(GH, 추가제외까지 뺌) · 월누적 · [저장], 그 아래 경고
+// 날짜 칸 결과(시간 칸과 같은 크기): 일추가(실근무 − 그날 의무) · 일누적(그날까지) · 실근무 · 일누적(GH, 추가제외까지 뺌) · 월누적 · [저장], 그 아래 경고
 function formPreview(f) {
   const { pre, date, k } = f.dataset, raw = fourVals(pre), v = checkFour(raw), ok = typeof v !== 'string';
   const r = ok ? slackIf(date, v, k) : null, wt = ok ? v[1] - v[0] - v[2] : null;
@@ -258,7 +258,9 @@ function formPreview(f) {
   const same = !!st && ok && v.every((x, i) => x === (st[i] || 0)), need = k === 'a' && !day.a, sb = f.querySelector('[data-act=saveForm]');
   const bad = !ok || !!WT.exShort(v); // 값이 잘못됐거나 제외 규칙에 안 맞으면 고칠 것이 남은 것
   sb.disabled = !bad && same && !need; sb.classList.toggle('soft', bad || (same && need));
-  put('r-wt', ok ? F(wt) : '-'); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-gh', ok ? F(r.gh, true) : '-', ok ? r.gh : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
+  // 일추가 = 실근무 − 그날 의무(평일 8:00, 날짜별로 바꾼 의무가 있으면 그 값)
+  const Mx = WT.peekMonth(db, date.slice(0, 7)), dd = +date.slice(8), ot = ok ? wt - WT.stdDay(Mx.days[dd], WT.kindOf(Mx, date.slice(0, 7), dd)) : null;
+  put('r-wt', ok ? F(wt) : '-'); put('r-ot', ok ? F(ot, true) : '-', ot); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-gh', ok ? F(r.gh, true) : '-', ok ? r.gh : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
   const short = ok ? WT.exShort(v) : 0, err = !ok && raw[0] != null && raw[1] != null ? v : '';
   f.querySelector('.pv').innerHTML =
     (err ? `<div class="warn-t" style="margin-top:4px">${err}</div>` : '') +

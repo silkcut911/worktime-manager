@@ -23,6 +23,12 @@ document.addEventListener('input', (e) => {
       setTime(form.dataset.pre + 'out', m + db.auto.stay); setTime(form.dataset.pre + 'ex', db.auto.ex);
     }
   }
+  // 계획을 출근·퇴근으로 직접 넣으면 제외를 머문 시간에 맞춰 자동으로(세트로 넣은 값은 그대로). 실제값 칸은 해당 없음
+  const pre = form ? form.dataset.pre : id.startsWith('p-') ? 'p-' : null;
+  if (pre && (!form || form.dataset.k === 'p') && (id === pre + 'in' || id === pre + 'out')) {
+    const a = readTime(pre + 'in'), b = readTime(pre + 'out');
+    if (a != null && b != null && !Number.isNaN(a) && !Number.isNaN(b) && b > a) setTime(pre + 'ex', WT.planEx(b - a));
+  }
   if (/^[fpqdn]-/.test(id)) preview(); // f 전일 · q 오늘 · n 내일 · d 밀린 날 · p 계획 시간 조정
   if (id.startsWith('s-')) setPreview();
 });

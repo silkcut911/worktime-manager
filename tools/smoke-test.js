@@ -144,12 +144,14 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const t2 = await text('#view');
   check('오늘 화면: 전일 실제 + 오늘 계획', t2.includes('전일 11/5(목) 실제') && t2.includes('오늘 11/6(금) 계획'));
   await page.$eval('#q-out', (e) => { e.value = '19:00'; e.dispatchEvent(new Event('input', { bubbles: true })); });
-  check('오늘 계획 미리보기: 11/6까지 여유', /일누적\s*\+5:28/.test(await text('.dform[data-pre="q-"]')), await text('.dform[data-pre="q-"]'));
+  check('오늘 계획 미리보기: 11/6까지 여유 (퇴근 바꾸면 제외 자동 1:00)', /일누적\s*\+6:08/.test(await text('.dform[data-pre="q-"]')), await text('.dform[data-pre="q-"]'));
   await click('[data-act=saveForm][data-pre="q-"]'); await wait(100);
-  check('오늘 칸 저장 = 계획값', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[6])) === JSON.stringify({ s: 'normal', p: [490, 1140, 100, 0] }));
+  check('오늘 칸 저장 = 계획값', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[6])) === JSON.stringify({ s: 'normal', p: [490, 1140, 60, 0] }));
   await shot('4-today2');
   const rows = await page.$$eval('.dform[data-pre="q-"] .grid5', (g) => g.map((x) => x.innerText.replace(/\s+/g, ' ')));
-  check('첫 줄 출근·퇴근·제외·실근무·일누적 / 둘째 줄 추가제외·월누적·저장', /출근.*퇴근.*제외.*실근무.*일누적/.test(rows[0]) && /추가제외.*월누적.*저장/.test(rows[1]), JSON.stringify(rows));
+  check('첫 줄 출근·퇴근·제외·일추가·일누적 / 둘째 줄 실근무·추가제외·일누적(GH)·월누적·저장', /출근.*퇴근.*제외.*일추가.*일누적/.test(rows[0]) && /실근무.*추가제외.*일누적\(GH\).*월누적.*저장/.test(rows[1]), JSON.stringify(rows));
+  { const t = await text('.dform[data-pre="q-"]'), wt = WT.parseHM(t.match(/실근무\s*(\d+:\d\d)/)[1]), ot = t.match(/일추가\s*([+-]?\d+:\d\d)/)[1];
+    check('일추가 = 실근무 − 8:00', WT.parseHM(ot.replace('+', '')) === wt - 480, `실근무 ${WT.fmt(wt)} 일추가 ${ot}`); }
   const fit = await page.evaluate(() => { const c = document.querySelectorAll('.dcard'); return [c.length, Math.round(c[c.length - 1].getBoundingClientRect().bottom), Math.round(document.querySelector('#slack').getBoundingClientRect().top)]; });
   check('전일·오늘·내일이 한 화면에 (폰 780px)', fit[0] === 3 && fit[1] <= fit[2], JSON.stringify(fit));
   check('카드 강조: 오늘 > 전일 > 내일', (await page.$$eval('.dcard', (c) => c.map((x) => x.className.split(' ').pop()))).join() === 'd-prev,d-today,d-next');
@@ -325,6 +327,17 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     await put('.dform[data-date="2026-12-03"] [id$=ex]', '0:00');
     await click('.dform[data-date="2026-12-03"] [data-act=saveForm]'); await wait(150);
     check('규칙 위반 실제값도 저장 안 됨', !(await page.evaluate(() => db.months['2026-12'].days[3].a)));
+  }
+
+  // 계획 출근·퇴근 직접 입력 → 제외 자동(4:40↑ 0:30, 6:00↑ 0:45, 9:00↑ 1:00)
+  {
+    await open('#/today');
+    const put = (id, v) => page.$eval(id, (e, v) => { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+    const ex = () => page.$eval('#n-ex', (e) => e.value), got = [];
+    await put('#n-in', '9:00');
+    for (const out of ['13:00', '14:00', '16:00', '18:30', '19:00']) { await put('#n-out', out); got.push(await ex()); }
+    check('계획 제외 자동: 4:00·5:00·7:00·9:30·10:00 → 0:00·0:30·0:45·1:00·1:00', got.join(' ') === '0:00 0:30 0:45 1:00 1:00', got.join(' '));
+    check('실제값 칸은 제외 자동 안 함', await page.evaluate(() => { const e = document.getElementById('f-ex'); if (!e) return true; const before = e.value; const o = document.getElementById('f-out'); o.value = '23:00'; o.dispatchEvent(new Event('input', { bubbles: true })); return e.value === before; }));
   }
 
   check('끝까지 화면 오류 없음', errors.length === 0, errors.join(' | '));

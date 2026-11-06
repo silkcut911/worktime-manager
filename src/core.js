@@ -53,6 +53,8 @@ var WT = (function () {
 
   // 머문 시간 4:30 이상 → 제외 최소 0:30, 9:00 이상 → 1:00. 부족하면 최소값, 아니면 0
   const exNeed = (stay) => (stay >= 540 ? 60 : stay >= 270 ? 30 : 0);
+  // 계획을 출근·퇴근으로 직접 넣을 때 제외 자동값(사용자 결정): 4:30 이상 ~ 6:00 이하 0:30, 6:00 초과 ~ 9:00 미만 0:45, 9:00 이상 1:00
+  const planEx = (stay) => (stay >= 540 ? 60 : stay > 360 ? 45 : stay >= 270 ? 30 : 0);
   const exShort = (v) => { const need = exNeed(v[1] - v[0]); return v[2] < need ? need : 0; };
   // 새로 넣는 값은 제외 규칙에 안 맞으면 저장을 막는다(화면). 아래는 이미 저장돼 있던 계획·예전 세트를 맞춰 두는 용도
   const fixEx = (v) => { const s = exShort(v); return s ? [v[0], v[1], s, v[3] || 0] : v; };
@@ -295,7 +297,7 @@ var WT = (function () {
   // 예전 한국어 기본 세트 이름 → 영어 (직접 바꾼 이름은 그대로)
   const OLD_NAMES = { '패밀리데이': 'Family Day', '재택근무': 'Home Office', '동호회일': 'Club Day', '조기근무': 'Early', '사내교육': 'Training', '일반근무': 'Regular' };
   return { STD, RATE, AUTO, OLD_NAMES, DEFAULT_CFG, KIND_NAME, parseHM, fmt, won, pad, localToday, daysIn, dow, addMonths, monthAge, dateStr, addDays,
-    holidayName, defaultKind, kindOf, stdOf, stdDay, max52, exNeed, exShort, fixEx, fixPlans, newDB, peekMonth, ensureMonth, touch, hasData, setDay,
+    holidayName, defaultKind, kindOf, stdOf, stdDay, max52, exNeed, planEx, exShort, fixEx, fixPlans, newDB, peekMonth, ensureMonth, touch, hasData, setDay,
     calcMonth, untilYesterday, slack, missingDays, addExAlerts, prevWorkday, nextWorkday, defaultEntryDate, applySet, fillEmpty, cycleKind, monthStats,
     backupAlerts, cleanupYears, toSheets, fromSheets, mergeImport };
 })();
