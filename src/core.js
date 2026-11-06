@@ -81,7 +81,7 @@ var WT = (function () {
       const wt = v ? v[1] - v[0] - v[2] : 0, add = v ? v[3] : 0;
       cumWT += wt; cumStd += std; cumAdd += add;
       rows.push({ d, date: dateStr(ym, d), dow: dow(ym, d), kind, std, day, v, src, wt, add, wtGH: wt - add, diff: wt - std,
-        cumWT, cumStd, cumDiff: cumWT - cumStd, missing: rel < 0 && kind === 'W' && !day.a, exShort: v ? exShort(v) : 0, rel });
+        cumWT, cumStd, cumDiff: cumWT - cumStd, cumAdd, missing: rel < 0 && kind === 'W' && !day.a, exShort: v ? exShort(v) : 0, rel });
     }
     const diff = cumWT - cumStd, otRecog = diff - cfg.baseOT, max = cfg.max == null ? max52(ym) : cfg.max;
     const total = { wt: cumWT, std: cumStd, diff, add: cumAdd, wtGH: cumWT - cumAdd, max, remain: max - (cumWT - cumAdd),

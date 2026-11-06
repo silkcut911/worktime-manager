@@ -3,6 +3,7 @@ load();
 render();
 addEventListener('hashchange', render);
 document.addEventListener('click', (e) => {
+  if (e.target.dataset && e.target.dataset.wheel) return openWheel(e.target);
   const el = e.target.closest('[data-act]');
   if (el && !el.disabled && ACT[el.dataset.act]) ACT[el.dataset.act](el, e);
 });

@@ -31,7 +31,11 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     const o = HTMLAnchorElement.prototype.click; // 다운로드는 실제로 받지 않고 기록만
     HTMLAnchorElement.prototype.click = function () { if (this.download) { (window.__downloads = window.__downloads || []).push(this.download); return; } return o.call(this); };
   });
-  const open = async (h) => { await page.goto('about:blank'); await page.goto(URL + h); await wait(150); }; // 매번 새로 읽음(데이터·날짜 바꾼 것 반영)
+  let numMode = true; // 1~8번은 숫자 입력으로 시험(기본은 휠 선택), 9번에서 휠 시험
+  const open = async (h) => { // 매번 새로 읽음(데이터·날짜 바꾼 것 반영)
+    await page.goto('about:blank'); await page.goto(URL + h); await wait(150);
+    if (numMode) await page.evaluate(() => { if (db.inputMode !== 'num') { db.inputMode = 'num'; save(); render(); } });
+  };
   const text = (sel) => page.$eval(sel, (e) => e.innerText);
   const click = (sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
   const shot = async (name) => { if (process.env.SHOT_DIR) await page.screenshot({ path: path.join(process.env.SHOT_DIR, name + '.png'), fullPage: true }); };
@@ -215,18 +219,38 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   check('세트 추가 후 위로 이동', JSON.stringify(await page.evaluate(() => db.sets.slice(-2).map((s) => s.name))) === JSON.stringify(['야근', 'Regular']));
   await shot('8-settings');
 
-  // 9. 시·분 선택 입력
-  await click('[data-act=inputMode][data-v=pick]');
+  // 9. 휠 선택 입력 (기본값)
+  numMode = false;
+  await click('[data-act=inputMode][data-v=wheel]');
   await open('#/today?d=2026-11-09');
-  check('선택 입력: 예정값이 선택돼 있음', JSON.stringify(await page.$$eval('#d-in select', (s) => s.map((x) => x.value))) === '["9","0"]');
-  await page.select('#d-out [data-t=h]', '20'); await page.select('#d-out [data-t=m]', '15');
-  check('선택 입력 미리보기', /실근무\s*9:35/.test(await text('.dform[data-pre="d-"]')), await text('.dform[data-pre="d-"]'));
+  check('휠 선택: 키보드 없는 칸', await page.$eval('#d-out', (e) => e.readOnly && e.inputMode === 'none'));
+  await click('#d-out');
+  const sel = () => page.evaluate(() => [wheelVal($('#wheel'), 'h'), wheelVal($('#wheel'), 'm')].join(':'));
+  check('휠: 칸의 값이 가운데', (await sel()) === '18:0', await sel());
+  await page.evaluate(() => { const c = (t) => $(`#wheel .wcol[data-t=${t}]`); c('h').scrollTop += 2 * 30; c('m').scrollTop += 15 * 30; });
+  await shot('9-wheel');
+  await click('#wheel [data-w=ok]'); await wait(50);
+  check('휠 확인 → 칸·미리보기', (await page.$eval('#d-out', (e) => e.value)) === '20:15' && /실근무\s*9:35/.test(await text('.dform[data-pre="d-"]')), await text('.dform[data-pre="d-"]'));
+  { // 당일 여유(GH) = 당일 여유 − 그날까지 추가제외 합 → 추가제외 1:00 넣으면 GH만 1:00 줄어듦
+    const g = (c) => page.$eval(`.dform[data-pre="d-"] .${c} b`, (e) => WT.parseHM(e.textContent.replace('+', '')));
+    const setAdd = (x) => page.$eval('#d-add', (e, x) => { e.value = x; e.dispatchEvent(new Event('input', { bubbles: true })); }, x);
+    await setAdd('0:00'); const d0 = await g('r-day'), g0 = await g('r-gh');
+    await setAdd('1:00'); const d1 = await g('r-day'), g1 = await g('r-gh');
+    check('당일 여유(GH) = 당일 여유 − 추가제외', d1 === d0 && g1 === g0 - 60 && g0 <= d0, `${d0} ${g0} → ${d1} ${g1}`);
+    await setAdd('0:00');
+  }
+  await click('#d-ex');
+  await page.evaluate(() => { $('#wheel .wcol[data-t=m]').scrollTop -= 2 * 30; }); // 1:40 에서 분을 2칸 위로 → 1:38
+  check('휠: 분 돌리기', (await sel()) === '1:38', await sel());
+  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop -= 38 * 30; recenter(c); c.scrollTop -= 30; });
+  check('휠: 00 위는 59 (이어서 돎)', (await sel()) === '1:59', await sel());
+  await click('#wheel [data-w=cancel]');
+  check('휠 취소 → 그대로', (await page.$eval('#d-ex', (e) => e.value)) === '1:40');
   dialogs.length = 0;
   await click('[data-act=saveForm][data-pre="d-"]'); await wait(100);
-  check('선택 입력 저장', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[9].a)) === '[540,1215,100,0]');
-  await shot('9-pick');
+  check('휠 입력 저장', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[9].a)) === '[540,1215,100,0]', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[9].a)));
   const w9 = await page.evaluate(() => document.documentElement.scrollWidth);
-  check('선택 입력도 384px 안', w9 <= 384, String(w9));
+  check('휠 입력도 384px 안', w9 <= 384, String(w9));
 
   check('끝까지 화면 오류 없음', errors.length === 0, errors.join(' | '));
   await browser.close();

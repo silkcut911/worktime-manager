@@ -19,29 +19,72 @@ const chip = (set) => (set ? `<span class="chip" style="background:${esc(set.col
 const four = (x) => `${F(x[0])}~${F(x[1])} 제외 ${F(x[2])}${x[3] ? ' +' + F(x[3]) : ''} → ${F(x[1] - x[0] - x[2])}`;
 const setText = (s) => (s.fam ? '의무 8:00 · 실근무 0:00' : four(s.t));
 
-// 시간 칸: 설정의 입력 방식에 따라 숫자칸(950 = 9:50) 또는 시·분 선택
-// dur: 제외·추가제외처럼 '시간 길이' 칸 → 숫자 한두 자리는 분(30 → 0:30)
+// 시간 칸: 설정의 입력 방식에 따라 휠 선택(기본: 누르면 아래에서 시·분 휠) 또는 숫자칸(950 = 9:50)
+// dur: 제외·추가제외처럼 '시간 길이' 칸 → 숫자 한두 자리는 분(30 → 0:30), 휠은 시 0~9
+const wheelMode = () => db.inputMode !== 'num';
 function timeField(id, label, min, dur) {
-  if (db.inputMode === 'pick') {
-    const h = min == null ? '' : Math.floor(min / 60), m = min == null ? 0 : min % 60;
-    const opts = (n, sel, txt) => Array.from({ length: n }, (_, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${txt(i)}</option>`).join('');
-    return `<div><label>${label}</label><span class="tp" id="${id}"><select data-t="h"><option value="">--</option>${opts(24, h, String)}</select>` +
-      `<select data-t="m">${opts(60, m, WT.pad)}</select></span></div>`;
-  }
-  return `<div><label>${label}</label><input id="${id}" class="tnum"${dur ? ' data-dur="1"' : ''} inputmode="numeric" maxlength="5" value="${min == null ? '' : F(min)}" placeholder="0:00"></div>`;
+  const kb = wheelMode() ? ' readonly inputmode="none" data-wheel="1"' : ' inputmode="numeric"';
+  return `<div><label>${label}</label><input id="${id}" class="tnum"${dur ? ' data-dur="1"' : ''}${kb} maxlength="5" value="${min == null ? '' : F(min)}" placeholder="0:00"></div>`;
 }
 function setTime(id, min) {
   const el = $('#' + id);
-  if (!el) return;
-  if (el.tagName !== 'SPAN') { el.value = F(min); return; }
-  el.querySelector('[data-t=h]').value = Math.floor(min / 60); el.querySelector('[data-t=m]').value = min % 60;
+  if (el) el.value = F(min);
 }
 function readTime(id) {
   const el = $('#' + id);
-  if (el.tagName !== 'SPAN') return el.dataset.dur && /^\d{1,2}$/.test(el.value.trim()) ? +el.value.trim() : WT.parseHM(el.value);
-  const h = el.querySelector('[data-t=h]').value;
-  return h === '' ? null : +h * 60 + +el.querySelector('[data-t=m]').value;
+  return el.dataset.dur && /^\d{1,2}$/.test(el.value.trim()) ? +el.value.trim() : WT.parseHM(el.value);
 }
+
+// 휠 선택창(누른 칸 바로 아래, 자리가 없으면 위): 위아래로 밀어 돌리고 가운데 줄 값이 선택됨. 끝에서 다시 처음으로 이어짐(59 다음 00)
+// [확인]하면 칸에 넣고 input 이벤트를 보내 숫자 입력 때와 똑같이 자동 채우기·미리보기가 돌아감
+const W_ROW = 30, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
+function openWheel(el) {
+  const dur = !!el.dataset.dur, hn = dur ? 10 : 24;
+  const v = readTime(el.id), cur = v == null || Number.isNaN(v) ? (dur ? 0 : 540) : v;
+  let w = $('#wheel');
+  if (!w) {
+    w = document.createElement('div'); w.id = 'wheel';
+    w.innerHTML = `<div class="wbox"><b class="wt"></b><div class="wcols"><div class="wcol" data-t="h"></div><b>:</b><div class="wcol" data-t="m"></div><div class="wbar"></div></div>
+      <div class="row"><button data-w="clear">지우기</button><span class="sp"></span><button data-w="cancel">취소</button><button class="pri" data-w="ok">확인</button></div></div>`;
+    document.body.appendChild(w);
+    w.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-w]'), it = e.target.closest('.wcol i');
+      if (it) { it.parentNode.scrollTo({ top: it.offsetTop - 2 * W_ROW, behavior: 'smooth' }); return; }
+      if (e.target === w || (b && b.dataset.w === 'cancel')) return closeWheel();
+      if (!b) return;
+      const t = w.target;
+      t.value = b.dataset.w === 'ok' ? F(wheelVal(w, 'h') * 60 + wheelVal(w, 'm')) : '';
+      closeWheel();
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  w.target = el;
+  w.querySelector('.wt').textContent = (el.parentNode.querySelector('label') || {}).textContent || '시간';
+  const fill = (t, n, sel) => {
+    const c = w.querySelector(`.wcol[data-t=${t}]`);
+    c.dataset.n = n;
+    c.innerHTML = Array.from({ length: n * W_REP }, (_, i) => `<i>${t === 'm' ? WT.pad(i % n) : i % n}</i>`).join('');
+    c.onscroll = () => { clearTimeout(c.h); c.h = setTimeout(() => recenter(c), 150); };
+    return () => { c.scrollTop = (n * (W_REP >> 1) + sel) * W_ROW; };
+  };
+  const goH = fill('h', hn, Math.min(Math.floor(cur / 60), hn - 1)), goM = fill('m', 60, cur % 60);
+  w.style.display = 'block';
+  goH(); goM(); // 보이게 한 뒤에 스크롤 위치를 맞춤
+  const box = w.firstChild, r = el.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
+  box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, r.left + r.width / 2 - bw / 2)) + 'px';
+  box.style.top = (r.bottom + 4 + bh <= innerHeight ? r.bottom + 4 : Math.max(8, r.top - 4 - bh)) + 'px';
+}
+function wheelVal(w, t) {
+  const c = w.querySelector(`.wcol[data-t=${t}]`);
+  return Math.round(c.scrollTop / W_ROW) % +c.dataset.n;
+}
+// 멈추면 같은 값의 가운데 묶음으로 옮겨 놓아 계속 돌릴 수 있게 함
+function recenter(c) {
+  const n = +c.dataset.n, i = Math.round(c.scrollTop / W_ROW);
+  const want = n * (W_REP >> 1) + (i % n);
+  if (Math.abs(i - want) >= n) c.scrollTop = want * W_ROW;
+}
+function closeWheel() { const w = $('#wheel'); if (w) w.style.display = 'none'; }
 
 function load() {
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
@@ -114,12 +157,13 @@ function slackBar(page) {
   return `<div><small>오늘까지 여유${t.missing ? ' · 미입력 포함' : ''}</small><b class="${signCls(s)}">${F(s, true)}</b></div>` +
     `<div><small>${+tym().slice(5)}월 말 예상 여유</small><b class="${signCls(t.diff)}">${F(t.diff, true)}</b></div>`;
 }
-// 그날 값(k: 'a' 실제, 'p' 계획)을 v로 넣었다고 치고 계산: 그날까지 여유시간, 그 달 월말 여유시간
+// 그날 값(k: 'a' 실제, 'p' 계획)을 v로 넣었다고 치고 계산: 그날까지 여유시간, 같은 값에서 그날까지 추가제외를 뺀 것(GH), 그 달 월말 여유시간
 function slackIf(date, v, k) {
   const ym = date.slice(0, 7), M = WT.peekMonth(db, ym), d = +date.slice(8);
   const pdb = { ...db, months: { ...db.months, [ym]: { ...M, days: { ...M.days, [d]: { ...(M.days[d] || {}), [k]: v } } } } };
   const c = WT.calcMonth(pdb, ym, today());
-  return { day: c.rows[d - 1].cumDiff, end: c.total.diff };
+  const r = c.rows[d - 1];
+  return { day: r.cumDiff, gh: r.cumDiff - r.cumAdd, end: c.total.diff };
 }
 
 // ── 날짜 카드: 지난날은 실제값 입력, 오늘·앞날은 계획값을 보고 고침 ──
@@ -138,8 +182,8 @@ function dayCard(date, pre, stay) {
   const auto = kind === 'W' && (!set || set.id === 'normal') ? ' data-auto="1"' : ''; // 출근 입력 시 퇴근·제외 자동
   const res = (cls, label, span) => `<div class="res ${cls}"${span ? ' style="grid-column:span 2"' : ''}><label>${label}</label><b>-</b></div>`;
   return h + `<div class="dform" data-pre="${pre}" data-date="${date}" data-k="${k}"${auto}${stay ? ' data-stay="1"' : ''} style="margin-top:4px">
-    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}${timeField(pre + 'ex', '제외', v[2], true)}${res('r-wt', '실근무')}${res('r-day', '당일 여유')}</div>
-    <div class="grid5" style="margin-top:4px"><div></div><div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-end', '월말 여유')}<div></div>
+    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}<div class="thin">${timeField(pre + 'ex', '제외', v[2], true)}</div>${res('r-wt thin', '실근무')}${res('r-day', '당일 여유')}</div>
+    <div class="grid5" style="margin-top:4px"><div></div><div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-gh thin', '당일 여유(GH)')}${res('r-end thin', '월말 여유')}
       <div class="res"><label>&nbsp;</label><button class="pri" data-act="saveForm" data-pre="${pre}" data-date="${date}" data-k="${k}"${stay ? ' data-stay="1"' : ''}>저장</button></div></div>
     <div class="pv"></div></div></div>`;
 }
@@ -174,12 +218,12 @@ function fourPreview(el, raw, std) {
   el.innerHTML = `실근무 <b>${F(wt)}</b> (${F(wt - (std == null ? WT.STD : std), true)})${v[3] ? ` · 추가제외 반영 ${F(wt - v[3])}` : ''}` +
     (short ? `<div class="warn-t">⚠ 제외 최소 ${F(short)} (머문 ${F(v[1] - v[0])})</div>` : '');
 }
-// 날짜 칸 아래 네 칸(시간 칸과 같은 크기): 실근무 · 당일 여유(그날까지) · 월말 여유 · [저장], 그 아래 경고
+// 날짜 칸 결과(시간 칸과 같은 크기): 실근무 · 당일 여유(그날까지) · 당일 여유(GH, 추가제외까지 뺌) · 월말 여유 · [저장], 그 아래 경고
 function formPreview(f) {
   const { pre, date, k } = f.dataset, raw = fourVals(pre), v = checkFour(raw), ok = typeof v !== 'string';
   const r = ok ? slackIf(date, v, k) : null, wt = ok ? v[1] - v[0] - v[2] : null;
   const put = (cls, val, sign) => { const b = f.querySelector(`.${cls} b`); b.textContent = val; b.className = sign == null ? '' : signCls(sign); };
-  put('r-wt', ok ? F(wt) : '-'); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
+  put('r-wt', ok ? F(wt) : '-'); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-gh', ok ? F(r.gh, true) : '-', ok ? r.gh : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
   const short = ok ? WT.exShort(v) : 0, err = !ok && raw[0] != null && raw[1] != null ? v : '';
   f.querySelector('.pv').innerHTML =
     (err ? `<div class="warn-t" style="margin-top:4px">${err}</div>` : '') +
@@ -331,8 +375,8 @@ function vSettings() {
   h += `<div class="card"><h3>출근 입력 시 자동 채우기 (Regular·세트 없는 평일)</h3><div class="grid2">
     ${timeField('au-stay', '퇴근 = 출근 +', db.auto.stay)}${timeField('au-ex', '제외', db.auto.ex, true)}</div>
     <div class="row" style="margin-top:8px"><span class="muted sp">예: 9:50 출근 → 퇴근 ${F(590 + db.auto.stay)}, 제외 ${F(db.auto.ex)}</span><button class="pri" data-act="saveAuto">저장</button></div></div>`;
-  h += `<div class="card"><h3>시간 입력 방식</h3><div class="tabs2" style="margin:0">${[['num', '숫자 입력 (950)'], ['pick', '시·분 선택']].map(([v, t]) =>
-    `<button class="${(db.inputMode || 'num') === v ? 'on' : ''}" data-act="inputMode" data-v="${v}">${t}</button>`).join('')}</div></div>`;
+  h += `<div class="card"><h3>시간 입력 방식</h3><div class="tabs2" style="margin:0">${[['wheel', '휠 선택'], ['num', '숫자 입력 (950)']].map(([v, t]) =>
+    `<button class="${(wheelMode() ? 'wheel' : 'num') === v ? 'on' : ''}" data-act="inputMode" data-v="${v}">${t}</button>`).join('')}</div></div>`;
   h += `<div class="card"><div class="row"><h3 class="sp" style="margin:0">시간세트 (위에서부터 순서)</h3><button class="sm" data-act="editSet" data-id="new">+ 추가</button></div>
     ${db.sets.map((s, i) => `<div class="setrow"><span class="sw" style="background:${esc(s.color)}"></span><div class="sp"><b>${esc(s.name)}</b>
       <div class="muted">${setText(s)}</div></div>
