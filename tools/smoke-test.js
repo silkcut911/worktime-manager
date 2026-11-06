@@ -227,7 +227,7 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await click('#d-out');
   const sel = () => page.evaluate(() => [wheelVal($('#wheel'), 'h'), wheelVal($('#wheel'), 'm')].join(':'));
   check('휠: 칸의 값이 가운데', (await sel()) === '18:0', await sel());
-  await page.evaluate(() => { const c = (t) => $(`#wheel .wcol[data-t=${t}]`); c('h').scrollTop += 2 * 30; c('m').scrollTop += 15 * 30; });
+  await page.evaluate(() => { const c = (t) => $(`#wheel .wcol[data-t=${t}]`); c('h').scrollTop += 2 * 44; c('m').scrollTop += 15 * 44; });
   await shot('9-wheel');
   await click('#wheel [data-w=ok]'); await wait(50);
   check('휠 확인 → 칸·미리보기', (await page.$eval('#d-out', (e) => e.value)) === '20:15' && /실근무\s*9:35/.test(await text('.dform[data-pre="d-"]')), await text('.dform[data-pre="d-"]'));
@@ -240,9 +240,9 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     await setAdd('0:00');
   }
   await click('#d-ex');
-  await page.evaluate(() => { $('#wheel .wcol[data-t=m]').scrollTop -= 2 * 30; }); // 1:40 에서 분을 2칸 위로 → 1:38
+  await page.evaluate(() => { $('#wheel .wcol[data-t=m]').scrollTop -= 2 * 44; }); // 1:40 에서 분을 2칸 위로 → 1:38
   check('휠: 분 돌리기', (await sel()) === '1:38', await sel());
-  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop -= 38 * 30; recenter(c); c.scrollTop -= 30; });
+  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop -= 38 * 44; recenter(c); c.scrollTop -= 44; });
   check('휠: 00 위는 59 (이어서 돎)', (await sel()) === '1:59', await sel());
   await click('#wheel [data-w=cancel]');
   check('휠 취소 → 그대로', (await page.$eval('#d-ex', (e) => e.value)) === '1:40');

@@ -37,7 +37,7 @@ function readTime(id) {
 
 // 휠 선택창(누른 칸 바로 아래, 자리가 없으면 위): 위아래로 밀어 돌리고 가운데 줄 값이 선택됨. 끝에서 다시 처음으로 이어짐(59 다음 00)
 // [확인]하면 칸에 넣고 input 이벤트를 보내 숫자 입력 때와 똑같이 자동 채우기·미리보기가 돌아감
-const W_ROW = 30, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
+const W_ROW = 44, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
 function openWheel(el) {
   const dur = !!el.dataset.dur, hn = dur ? 10 : 24;
   const v = readTime(el.id), cur = v == null || Number.isNaN(v) ? (dur ? 0 : 540) : v;
@@ -71,7 +71,8 @@ function openWheel(el) {
   w.style.display = 'block';
   goH(); goM(); // 보이게 한 뒤에 스크롤 위치를 맞춤
   const box = w.firstChild, r = el.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
-  box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, r.left + r.width / 2 - bw / 2)) + 'px';
+  // 오른손으로 고르기 쉽게 칸 가운데보다 60px 오른쪽 (화면 밖으로는 안 나감)
+  box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, r.left + r.width / 2 - bw / 2 + 60)) + 'px';
   box.style.top = (r.bottom + 4 + bh <= innerHeight ? r.bottom + 4 : Math.max(8, r.top - 4 - bh)) + 'px';
 }
 function wheelVal(w, t) {

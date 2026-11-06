@@ -120,16 +120,16 @@ nav a.on { color: var(--navy); font-weight: 700; }
 /* 휠 선택창: 화면 아래에서 올라옴, 5줄 보이고 가운데 줄이 선택값 */
 input[data-wheel] { cursor: pointer; caret-color: transparent; }
 #wheel { position: fixed; inset: 0; background: rgba(0,0,0,.15); display: none; z-index: 10; }
-#wheel .wbox { position: absolute; background: #fff; width: 184px; border-radius: 12px; padding: 6px 8px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+#wheel .wbox { position: absolute; background: #fff; width: 220px; border-radius: 12px; padding: 6px 10px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
 #wheel .wt { display: block; font-size: 13px; }
-#wheel .wcols { position: relative; display: flex; align-items: center; justify-content: center; gap: 2px; margin-bottom: 6px; font-size: 20px; }
-#wheel .wcol { position: relative; height: 150px; width: 56px; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
+#wheel .wcols { position: relative; display: flex; align-items: center; justify-content: center; gap: 2px; margin-bottom: 6px; font-size: 22px; }
+#wheel .wcol { position: relative; height: 220px; width: 68px; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
 #wheel .wcol::-webkit-scrollbar { display: none; }
-#wheel .wcol::before, #wheel .wcol::after { content: ''; display: block; height: 60px; }
-#wheel .wcol i { display: block; height: 30px; line-height: 30px; text-align: center; font-style: normal; font-weight: 600; scroll-snap-align: center; }
-#wheel .wbar { position: absolute; left: 0; right: 0; top: 60px; height: 30px; border-top: 2px solid var(--navy); border-bottom: 2px solid var(--navy); background: rgba(31,58,95,.07); pointer-events: none; }
+#wheel .wcol::before, #wheel .wcol::after { content: ''; display: block; height: 88px; }
+#wheel .wcol i { display: block; height: 44px; line-height: 44px; text-align: center; font-style: normal; font-weight: 600; scroll-snap-align: center; }
+#wheel .wbar { position: absolute; left: 0; right: 0; top: 88px; height: 44px; border-top: 2px solid var(--navy); border-bottom: 2px solid var(--navy); background: rgba(31,58,95,.07); pointer-events: none; }
 #wheel .row { gap: 4px; flex-wrap: nowrap; }
-#wheel .row button { padding: 5px 8px; font-size: 14px; }
+#wheel .row button { padding: 6px 11px; font-size: 15px; }
 .tabs2 { display: flex; gap: 6px; margin-bottom: 8px; }
 .tabs2 button.on { background: var(--navy); color: #fff; }
 /* 계획 화면은 작게: 달력까지 한 화면에 */
