@@ -100,6 +100,8 @@ function load() {
   if (!db || db.v !== 1) db = WT.newDB();
   if (!db.auto) db.auto = { ...WT.AUTO };
   for (const s of db.sets) if (WT.OLD_NAMES[s.name]) s.name = WT.OLD_NAMES[s.name];
+  const nFix = WT.fixPlans(db); // 제외 규칙에 안 맞는 계획은 고쳐 둠(여러 번 실행해도 같음)
+  if (nFix) setTimeout(() => toast(`계획 ${nFix}일의 제외시간을 규칙에 맞게 고쳤습니다`), 300);
   if (!db.rateInit) { for (const M of Object.values(db.months)) if (!M.cfg.rate) M.cfg.rate = WT.RATE; db.rateInit = 1; }
   WT.ensureMonth(db, tym());
   WT.cleanupYears(db, today());
@@ -207,8 +209,8 @@ function dayCard(date, pre, stay) {
   const auto = kind === 'W' && (!set || set.id === 'normal') ? ' data-auto="1"' : ''; // 출근 입력 시 퇴근·제외 자동
   const res = (cls, label, span) => `<div class="res ${cls}"${span ? ' style="grid-column:span 2"' : ''}><label>${label}</label><b>-</b></div>`;
   return h + `<div class="dform" data-pre="${pre}" data-date="${date}" data-k="${k}"${auto}${stay ? ' data-stay="1"' : ''} style="margin-top:4px">
-    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}<div class="thin">${timeField(pre + 'ex', '제외', v[2], true)}</div>${res('r-wt thin', '실근무')}${res('r-day', '당일 여유')}</div>
-    <div class="grid5" style="margin-top:4px"><div></div><div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-gh thin', '당일 여유(GH)')}${res('r-end thin', '월말 여유')}
+    <div class="grid5">${timeField(pre + 'in', '출근', v[0])}${timeField(pre + 'out', '퇴근', v[1])}<div class="thin">${timeField(pre + 'ex', '제외', v[2], true)}</div>${res('r-wt thin', '실근무')}${res('r-day', '일누적')}</div>
+    <div class="grid5" style="margin-top:4px"><div></div><div class="light">${timeField(pre + 'add', '추가제외', v[3], true)}</div>${res('r-gh thin', '일누적(GH)')}${res('r-end thin', '월누적')}
       <div class="res"><label>&nbsp;</label><button class="pri" data-act="saveForm" data-pre="${pre}" data-date="${date}" data-k="${k}"${stay ? ' data-stay="1"' : ''}>저장</button></div></div>
     <div class="pv"></div></div></div>`;
 }
@@ -224,6 +226,8 @@ function vToday(q) {
     (miss.includes(sel) ? dayCard(sel, 'd-') : '') + '</div>';
   return h + dayCard(prev, 'f-') + dayCard(t, 'q-') + dayCard(WT.nextWorkday(db, t), 'n-');
 }
+// 제외 규칙(머문 4:30 이상 → 0:30, 9:00 이상 → 1:00)에 안 맞을 때 안내. 저장은 막고 사용자가 고쳐서 넣는다
+const exMsg = (v) => `제외를 ${F(WT.exShort(v))} 이상으로 고쳐야 저장됩니다 (머문 ${F(v[1] - v[0])})`;
 const fourVals = (pre) => ['in', 'out', 'ex', 'add'].map((id) => readTime(pre + id));
 // 네 칸(출근·퇴근·제외·추가제외) 확인: 오류면 문구, 아니면 [출근, 퇴근, 제외, 추가제외]
 function checkFour(v) {
@@ -241,9 +245,9 @@ function fourPreview(el, raw, std) {
   if (typeof v === 'string') { el.textContent = raw[0] == null || raw[1] == null ? '' : v; return; }
   const wt = v[1] - v[0] - v[2], short = WT.exShort(v);
   el.innerHTML = `실근무 <b>${F(wt)}</b> (${F(wt - (std == null ? WT.STD : std), true)})${v[3] ? ` · 추가제외 반영 ${F(wt - v[3])}` : ''}` +
-    (short ? `<div class="warn-t">⚠ 제외 최소 ${F(short)} (머문 ${F(v[1] - v[0])})</div>` : '');
+    (short ? `<div class="warn-t">⚠ ${exMsg(v)}</div>` : '');
 }
-// 날짜 칸 결과(시간 칸과 같은 크기): 실근무 · 당일 여유(그날까지) · 당일 여유(GH, 추가제외까지 뺌) · 월말 여유 · [저장], 그 아래 경고
+// 날짜 칸 결과(시간 칸과 같은 크기): 실근무 · 일누적(그날까지) · 일누적(GH, 추가제외까지 뺌) · 월누적 · [저장], 그 아래 경고
 function formPreview(f) {
   const { pre, date, k } = f.dataset, raw = fourVals(pre), v = checkFour(raw), ok = typeof v !== 'string';
   const r = ok ? slackIf(date, v, k) : null, wt = ok ? v[1] - v[0] - v[2] : null;
@@ -252,12 +256,13 @@ function formPreview(f) {
   // 흐린색(켜짐): 실제값이 아직 없는 지난날을 안 바꿨을 때(누르면 계획값 그대로 실제로 저장), 값이 비었거나 잘못됐을 때(입력할 것이 남음, 누르면 이유 안내)
   const day = WT.peekMonth(db, date.slice(0, 7)).days[+date.slice(8)] || {}, st = k === 'a' ? day.a || day.p : day.p;
   const same = !!st && ok && v.every((x, i) => x === (st[i] || 0)), need = k === 'a' && !day.a, sb = f.querySelector('[data-act=saveForm]');
-  sb.disabled = ok && same && !need; sb.classList.toggle('soft', !ok || (same && need));
+  const bad = !ok || !!WT.exShort(v); // 값이 잘못됐거나 제외 규칙에 안 맞으면 고칠 것이 남은 것
+  sb.disabled = !bad && same && !need; sb.classList.toggle('soft', bad || (same && need));
   put('r-wt', ok ? F(wt) : '-'); put('r-day', ok ? F(r.day, true) : '-', ok ? r.day : null); put('r-gh', ok ? F(r.gh, true) : '-', ok ? r.gh : null); put('r-end', ok ? F(r.end, true) : '-', ok ? r.end : null);
   const short = ok ? WT.exShort(v) : 0, err = !ok && raw[0] != null && raw[1] != null ? v : '';
   f.querySelector('.pv').innerHTML =
     (err ? `<div class="warn-t" style="margin-top:4px">${err}</div>` : '') +
-    (short ? `<div class="warn-t" style="margin-top:4px">⚠ 제외 최소 ${F(short)} (머문 ${F(v[1] - v[0])})</div>` : '') +
+    (short ? `<div class="warn-t" style="margin-top:4px">⚠ ${exMsg(v)}</div>` : '') +
     (ok && v[3] ? `<div class="muted" style="margin-top:4px">추가제외 반영 실근무 ${F(wt - v[3])}</div>` : '');
 }
 function preview() {
@@ -428,7 +433,7 @@ function setPreview() {
   if (v[0] == null || v[1] == null || v.some(Number.isNaN)) { el.textContent = ''; return; }
   v[2] = v[2] || 0; v[3] = v[3] || 0;
   const short = WT.exShort(v);
-  el.innerHTML = four(v) + (short ? `<div class="warn-t">⚠ 머문 시간 ${F(v[1] - v[0])} → 제외 최소 ${F(short)}</div>` : '');
+  el.innerHTML = four(v) + (short ? `<div class="warn-t">⚠ ${exMsg(v)}</div>` : '');
 }
 
 // ── 엑셀 저장·불러오기 ──
@@ -480,6 +485,7 @@ const ACT = {
   saveForm(el) {
     const { pre, date, k, stay } = el.dataset, ym = date.slice(0, 7), d = +date.slice(8), v = checkFour(fourVals(pre));
     if (typeof v === 'string') return toast(v, 1);
+    if (WT.exShort(v)) return toast(exMsg(v), 1); // 제외 규칙에 안 맞으면 실제·계획 모두 저장 안 함(사용자가 고쳐서 저장)
     if (!guardOld(ym)) return;
     const M = WT.ensureMonth(db, ym);
     WT.setDay(M, d, { ...(M.days[d] || {}), [k]: v }); changed(ym);
@@ -514,12 +520,12 @@ const ACT = {
   applyDay(el) {
     const ym = el.dataset.m, d = +el.dataset.d, v = checkFour(fourVals('p-')), std = readTime('p-std');
     if (typeof v === 'string') return toast(v, 1);
+    if (WT.exShort(v)) return toast(exMsg(v), 1);
     if (std == null || Number.isNaN(std)) return toast('그날 의무시간을 입력하세요', 1);
     const M = draftDB(ym).months[ym], day = { ...(M.days[d] || {}), p: v };
     if (std === WT.STD) delete day.std; else day.std = std;
     WT.setDay(M, d, day); ui.draft.dirty = true; ui.editDay = null;
-    const short = WT.exShort(v);
-    toast(short ? `적용했습니다. ⚠ 제외 최소 ${F(short)} 미달` : `${d}일 계획 ${F(v[1] - v[0] - v[2])} 적용`, !!short); render();
+    toast(`${d}일 계획 ${F(v[1] - v[0] - v[2])} 적용`); render();
   },
   clearPlanDay(el) {
     const ym = el.dataset.m, d = +el.dataset.d, M = draftDB(ym).months[ym], day = { ...M.days[d] };
@@ -559,9 +565,8 @@ const ACT = {
     if (!old.fam) {
       const v = checkFour([0, 1, 2, 3].map((i) => readTime('s-' + i)));
       if (typeof v === 'string') return toast(v, 1);
+      if (WT.exShort(v)) return toast(exMsg(v), 1);
       s.t = v;
-      const short = WT.exShort(v);
-      if (short) toast(`저장했습니다. ⚠ 제외 최소 ${F(short)} 미달`, 1);
     }
     if (isNew) db.sets.push({ ...s, id: 's' + Date.now().toString(36) }); else db.sets[db.sets.indexOf(old)] = s;
     ui.editSet = null; save(); render();

@@ -95,9 +95,9 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await page.$eval('#d-ex', (e) => e.dispatchEvent(new Event('input', { bubbles: true })));
   const pv3 = () => text('.dform[data-pre="d-"]');
   check('미리보기 계산', /실근무\s*8:49/.test(await pv3()), await pv3());
-  check('미리보기: 당일 여유 · 월말 여유 · 저장 (시간 칸 아래 네 칸)', /당일 여유\s*\+0:49/.test(await pv3()) && /월말 여유\s*[+-]\d+:\d\d/.test(await pv3()) && (await page.$('.dform[data-pre="d-"] .grid5 [data-act=saveForm]')) !== null, await pv3());
+  check('미리보기: 일누적 · 월누적 · 저장 (시간 칸 아래 네 칸)', /일누적\s*\+0:49/.test(await pv3()) && /월누적\s*[+-]\d+:\d\d/.test(await pv3()) && (await page.$('.dform[data-pre="d-"] .grid5 [data-act=saveForm]')) !== null, await pv3());
   await page.$eval('#d-ex', (e) => { e.value = '45'; e.dispatchEvent(new Event('input', { bubbles: true })); });
-  check('제외 45 = 0:45, 최소 경고 (머문 10:19 → 1:00)', (await pv3()).includes('제외 최소 1:00') && /실근무\s*9:34/.test(await pv3()), await pv3());
+  check('제외 45 = 0:45, 규칙 안내 (머문 10:19 → 1:00)', (await pv3()).includes('제외를 1:00 이상으로 고쳐야 저장됩니다') && /실근무\s*9:34/.test(await pv3()), await pv3());
   await page.$eval('#d-ex', (e) => (e.value = '130'));
   await click('[data-act=saveForm][data-pre="d-"]'); await wait(150);
   check('저장 후 밀린 날 2일', (await text('#view')).includes('밀린 날 2일'));
@@ -144,12 +144,12 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const t2 = await text('#view');
   check('오늘 화면: 전일 실제 + 오늘 계획', t2.includes('전일 11/5(목) 실제') && t2.includes('오늘 11/6(금) 계획'));
   await page.$eval('#q-out', (e) => { e.value = '19:00'; e.dispatchEvent(new Event('input', { bubbles: true })); });
-  check('오늘 계획 미리보기: 11/6까지 여유', /당일 여유\s*\+5:28/.test(await text('.dform[data-pre="q-"]')), await text('.dform[data-pre="q-"]'));
+  check('오늘 계획 미리보기: 11/6까지 여유', /일누적\s*\+5:28/.test(await text('.dform[data-pre="q-"]')), await text('.dform[data-pre="q-"]'));
   await click('[data-act=saveForm][data-pre="q-"]'); await wait(100);
   check('오늘 칸 저장 = 계획값', JSON.stringify(await page.evaluate(() => db.months['2026-11'].days[6])) === JSON.stringify({ s: 'normal', p: [490, 1140, 100, 0] }));
   await shot('4-today2');
   const rows = await page.$$eval('.dform[data-pre="q-"] .grid5', (g) => g.map((x) => x.innerText.replace(/\s+/g, ' ')));
-  check('첫 줄 출근·퇴근·제외·실근무·당일 여유 / 둘째 줄 추가제외·월말 여유·저장', /출근.*퇴근.*제외.*실근무.*당일 여유/.test(rows[0]) && /추가제외.*월말 여유.*저장/.test(rows[1]), JSON.stringify(rows));
+  check('첫 줄 출근·퇴근·제외·실근무·일누적 / 둘째 줄 추가제외·월누적·저장', /출근.*퇴근.*제외.*실근무.*일누적/.test(rows[0]) && /추가제외.*월누적.*저장/.test(rows[1]), JSON.stringify(rows));
   const fit = await page.evaluate(() => { const c = document.querySelectorAll('.dcard'); return [c.length, Math.round(c[c.length - 1].getBoundingClientRect().bottom), Math.round(document.querySelector('#slack').getBoundingClientRect().top)]; });
   check('전일·오늘·내일이 한 화면에 (폰 780px)', fit[0] === 3 && fit[1] <= fit[2], JSON.stringify(fit));
   check('카드 강조: 오늘 > 전일 > 내일', (await page.$$eval('.dcard', (c) => c.map((x) => x.className.split(' ').pop()))).join() === 'd-prev,d-today,d-next');
@@ -171,7 +171,7 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   check('계획 화면: 달력까지 한 화면에', pfit[0] <= pfit[1], JSON.stringify(pfit));
   await setDB(nov); // 아래 확인은 원래 11월 데이터로
   await open('#/today');
-  check('전일(11/5) 당일 여유 +3:50', /당일 여유\s*\+3:50/.test(await text('.dform[data-pre="f-"]')), await text('.dform[data-pre="f-"]'));
+  check('전일(11/5) 일누적 +3:50', /일누적\s*\+3:50/.test(await text('.dform[data-pre="f-"]')), await text('.dform[data-pre="f-"]'));
 
   // 5. 추가제외: 월말(11/26) 주황 띠 → 삭제하면 사라짐
   TODAY = '2026-11-26';
@@ -213,7 +213,11 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await click('[data-act=editSet][data-id=new]');
   await page.type('#s-name', '야근'); await page.$eval('#s-0', (e) => (e.value = '900')); await page.$eval('#s-1', (e) => (e.value = '2100')); await page.$eval('#s-2', (e) => (e.value = '030'));
   await page.$eval('#s-2', (e) => e.dispatchEvent(new Event('input', { bubbles: true })));
-  check('세트 제외 경고', (await text('#spv')).includes('제외 최소 1:00'));
+  check('세트 제외 안내', (await text('#spv')).includes('제외를 1:00 이상으로'));
+  const n0 = await page.evaluate(() => db.sets.length);
+  await click('[data-act=saveSet]');
+  check('세트: 제외 규칙에 안 맞으면 저장 안 됨', (await page.evaluate(() => db.sets.length)) === n0);
+  await page.$eval('#s-2', (e) => (e.value = '100'));
   await click('[data-act=saveSet]');
   const n = await page.evaluate(() => db.sets.length);
   await click(`[data-act=moveSet][data-i="${n - 1}"][data-n="-1"]`);
@@ -232,12 +236,12 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await shot('9-wheel');
   await click('#wheel [data-w=ok]'); await wait(50);
   check('휠 확인 → 칸·미리보기', (await page.$eval('#d-out', (e) => e.value)) === '20:15' && /실근무\s*9:35/.test(await text('.dform[data-pre="d-"]')), await text('.dform[data-pre="d-"]'));
-  { // 당일 여유(GH) = 당일 여유 − 그날까지 추가제외 합 → 추가제외 1:00 넣으면 GH만 1:00 줄어듦
+  { // 일누적(GH) = 일누적 − 그날까지 추가제외 합 → 추가제외 1:00 넣으면 GH만 1:00 줄어듦
     const g = (c) => page.$eval(`.dform[data-pre="d-"] .${c} b`, (e) => WT.parseHM(e.textContent.replace('+', '')));
     const setAdd = (x) => page.$eval('#d-add', (e, x) => { e.value = x; e.dispatchEvent(new Event('input', { bubbles: true })); }, x);
     await setAdd('0:00'); const d0 = await g('r-day'), g0 = await g('r-gh');
     await setAdd('1:00'); const d1 = await g('r-day'), g1 = await g('r-gh');
-    check('당일 여유(GH) = 당일 여유 − 추가제외', d1 === d0 && g1 === g0 - 60 && g0 <= d0, `${d0} ${g0} → ${d1} ${g1}`);
+    check('일누적(GH) = 일누적 − 추가제외', d1 === d0 && g1 === g0 - 60 && g0 <= d0, `${d0} ${g0} → ${d1} ${g1}`);
     await setAdd('0:00');
   }
   await click('#d-ex');
@@ -276,7 +280,7 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await open('#/today?d=2026-11-09');
   const fd = '.dform[data-pre="f-"]', fdate = await page.$eval(fd, (f) => f.dataset.date);
   const put = (sel, v) => page.$eval(sel, (e, v) => { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
-  await put('#f-in', '9:00'); await put('#f-out', '18:00'); await put('#d-add', '0:15');
+  await put('#f-in', '9:00'); await put('#f-out', '18:00'); await put('#f-ex', '1:00'); await put('#d-add', '0:15');
   await click('[data-act=saveForm][data-pre="d-"]'); await wait(150);
   const kept = await page.$eval(fd, (f) => [f.querySelector('#f-in').value, f.querySelector('#f-out').value, f.querySelector('[data-act=saveForm]').disabled, f.querySelector('[data-act=saveForm]').classList.contains('soft')]);
   check('다른 카드 저장 뒤에도 넣던 값·남색 버튼 유지', JSON.stringify(kept) === '["9:00","18:00",false,false]', JSON.stringify(kept));
@@ -302,9 +306,26 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await click(card + ' [data-act=saveForm]'); await wait(150);
   check('계획대로 확정 → 실제값 저장, 칩 하나 줄어듦', JSON.stringify(await page.evaluate(() => db.months['2026-12'].days[1].a)) === '[590,1122,45,0]' && (await page.$$('.misscard .mchip')).length === 5);
   await click('.misscard .mchip');
-  await page.$eval('.dform[data-date="2026-12-02"] [id$=out]', (e) => { e.value = '19:30'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.$eval('.dform[data-date="2026-12-02"] [id$=out]', (e) => { e.value = '18:30'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await click('.dform[data-date="2026-12-02"] [data-act=saveForm]'); await wait(150);
-  check('고쳐서 확정 → 고친 값 저장', JSON.stringify(await page.evaluate(() => db.months['2026-12'].days[2].a)) === '[590,1170,45,0]');
+  check('고쳐서 확정 → 고친 값 저장', JSON.stringify(await page.evaluate(() => db.months['2026-12'].days[2].a)) === '[590,1110,45,0]');
+
+  // 제외 규칙에 안 맞으면 계획·실제 모두 저장 안 됨, [저장]은 흐린 남색
+  {
+    const nd = await page.$eval('.dform[data-pre="n-"]', (f) => f.dataset.date);
+    const before = await page.evaluate((d) => JSON.stringify((db.months[d.slice(0, 7)] || { days: {} }).days[+d.slice(8)] || null), nd);
+    const put = (id, v) => page.$eval(id, (e, v) => { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+    await put('#n-in', '9:00'); await put('#n-out', '19:30'); await put('#n-ex', '0:30');
+    check('규칙 위반: [저장] 흐린 남색', await page.$eval('[data-act=saveForm][data-pre="n-"]', (e) => !e.disabled && e.classList.contains('soft')));
+    await click('[data-act=saveForm][data-pre="n-"]'); await wait(150);
+    check('규칙 위반 계획은 저장 안 됨', (await page.evaluate((d) => JSON.stringify((db.months[d.slice(0, 7)] || { days: {} }).days[+d.slice(8)] || null), nd)) === before);
+    await put('#n-ex', '1:00'); await click('[data-act=saveForm][data-pre="n-"]'); await wait(150);
+    check('고쳐서 넣으면 저장됨', JSON.stringify(await page.evaluate((d) => db.months[d.slice(0, 7)].days[+d.slice(8)].p, nd)) === '[540,1170,60,0]');
+    await open('#/today?d=2026-12-03');
+    await put('.dform[data-date="2026-12-03"] [id$=ex]', '0:00');
+    await click('.dform[data-date="2026-12-03"] [data-act=saveForm]'); await wait(150);
+    check('규칙 위반 실제값도 저장 안 됨', !(await page.evaluate(() => db.months['2026-12'].days[3].a)));
+  }
 
   check('끝까지 화면 오류 없음', errors.length === 0, errors.join(' | '));
   await browser.close();

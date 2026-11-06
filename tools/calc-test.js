@@ -152,6 +152,12 @@ check('2월에 지움', WT.cleanupYears(db, '2027-02-01'), ['2026-11']);
   console.log('      1년치 저장 데이터', kb.toFixed(1) + 'KB');
   check('1년치 데이터 40KB 이하', kb < 40, true);
 
+  // 계획은 제외 규칙에 맞게 고침: 9:00 이상 머물면 1:00, 4:30 이상이면 0:30. 실제값은 그대로
+  check('fixEx: 9:50~19:10 제외 0:45 → 1:00', WT.fixEx([590, 1150, 45, 30]), [590, 1150, 60, 30]);
+  check('fixEx: 규칙에 맞으면 그대로', WT.fixEx([590, 1122, 45, 0]), [590, 1122, 45, 0]);
+  { const d2 = WT.newDB(), M = WT.ensureMonth(d2, '2026-11'); M.days[3] = { p: [540, 1140, 0, 0], a: [540, 1140, 0, 0] }; M.days[4] = { p: [590, 1122, 45, 0] };
+    check('fixPlans: 안 맞는 계획만 고침, 실제값은 그대로', [WT.fixPlans(d2), M.days[3].p[2], M.days[3].a[2], WT.fixPlans(d2)], [1, 60, 0, 0]); }
+
   console.log(fails.length ? `\n${fails.length}개 실패` : '\nOK');
   process.exit(fails.length ? 1 : 0);
 })();
