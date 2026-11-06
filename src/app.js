@@ -64,8 +64,16 @@ function openWheel(el) {
     const c = w.querySelector(`.wcol[data-t=${t}]`);
     c.dataset.n = n;
     c.innerHTML = Array.from({ length: n * W_REP }, (_, i) => `<i>${t === 'm' ? WT.pad(i % n) : i % n}</i>`).join('');
-    c.onscroll = () => { clearTimeout(c.h); c.h = setTimeout(() => recenter(c), 150); };
-    return () => { c.scrollTop = (n * (W_REP >> 1) + sel) * W_ROW; };
+    c.onscroll = () => {
+      // 분이 59 → 00 으로 넘어가면 시 +1, 00 → 59 면 시 −1: 분 목록은 60개씩 반복되므로 몇 번째 묶음인지가 바뀌면 넘어간 것
+      if (t === 'm') {
+        const b = Math.floor(Math.round(c.scrollTop / W_ROW) / n);
+        if (b !== c.blk) w.querySelector('.wcol[data-t=h]').scrollBy({ top: (b - c.blk) * W_ROW, behavior: 'smooth' });
+        c.blk = b;
+      }
+      clearTimeout(c.h); c.h = setTimeout(() => recenter(c), 150);
+    };
+    return () => { c.scrollTop = (n * (W_REP >> 1) + sel) * W_ROW; c.blk = W_REP >> 1; };
   };
   const goH = fill('h', hn, Math.min(Math.floor(cur / 60), hn - 1)), goM = fill('m', 60, cur % 60);
   w.style.display = 'block';
@@ -83,7 +91,7 @@ function wheelVal(w, t) {
 function recenter(c) {
   const n = +c.dataset.n, i = Math.round(c.scrollTop / W_ROW);
   const want = n * (W_REP >> 1) + (i % n);
-  if (Math.abs(i - want) >= n) c.scrollTop = want * W_ROW;
+  if (Math.abs(i - want) >= n) { c.scrollTop = want * W_ROW; c.blk = W_REP >> 1; } // 묶음만 옮긴 것이라 시는 그대로
 }
 function closeWheel() { const w = $('#wheel'); if (w) w.style.display = 'none'; }
 

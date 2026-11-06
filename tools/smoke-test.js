@@ -243,8 +243,10 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await click('#d-ex');
   await page.evaluate(() => { $('#wheel .wcol[data-t=m]').scrollTop -= 2 * 44; }); // 1:40 에서 분을 2칸 위로 → 1:38
   check('휠: 분 돌리기', (await sel()) === '1:38', await sel());
-  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop -= 38 * 44; recenter(c); c.scrollTop -= 44; });
-  check('휠: 00 위는 59 (이어서 돎)', (await sel()) === '1:59', await sel());
+  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop -= 38 * 44; recenter(c); c.scrollTop -= 44; }); await wait(600);
+  check('휠: 분 00 위는 59, 시도 1 내려감', (await sel()) === '0:59', await sel());
+  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.scrollTop += 44; }); await wait(600);
+  check('휠: 분 59 아래는 00, 시도 1 올라감', (await sel()) === '1:0', await sel());
   await click('#wheel [data-w=cancel]');
   check('휠 취소 → 그대로', (await page.$eval('#d-ex', (e) => e.value)) === '1:40');
   dialogs.length = 0;
