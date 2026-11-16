@@ -260,14 +260,37 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const minuteBox = await page.$eval('#wheel .wcol[data-t=m]', (c) => { const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
   const touch = await page.createCDPSession();
   await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: minuteBox.x, y: minuteBox.y }] });
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: minuteBox.x, y: minuteBox.y - 51 }] });
+  for (let i = 1; i <= 6; i++) {
+    await wait(80);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: minuteBox.x, y: minuteBox.y - i * 10 }] });
+  }
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await wait(80);
   const stopped = await sel(); await wait(400);
-  check('휠: 손을 떼면 가까운 숫자에서 정지·관성 없음', stopped === '20:16' && await sel() === stopped, await sel());
+  check('휠: 천천히 한 칸 이동하면 가까운 숫자에서 정지', stopped === '20:16' && await sel() === stopped, await sel());
   await wait(350); // 드래그 직후 발생하는 클릭 무시 시간이 지난 뒤 탭
   await page.touchscreen.tap(minuteBox.x, minuteBox.y + 44); await wait(50);
   check('휠: 보이는 다음 숫자 탭 → 즉시 선택', await sel() === '20:17', await sel());
+  const fling = async () => {
+    const timestamp = Date.now() / 1000;
+    await touch.send('Input.dispatchTouchEvent', { timestamp, type: 'touchStart', touchPoints: [{ x: minuteBox.x, y: minuteBox.y + 66 }] });
+    for (let i = 1; i <= 4; i++) {
+      await wait(16);
+      await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + i * 0.008, type: 'touchMove', touchPoints: [{ x: minuteBox.x, y: minuteBox.y + 66 - i * 33 }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + 0.033, type: 'touchEnd', touchPoints: [] });
+  };
+  await fling();
+  const released = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop);
+  await wait(100);
+  const coasting = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop);
+  check('휠: 빠르게 밀면 손을 뗀 뒤에도 한 칸 이상 관성 회전', coasting > released + 44, `${released} → ${coasting}`);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: minuteBox.x, y: minuteBox.y }] });
+  await wait(60);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await wait(80); const braked = await sel(); await wait(350);
+  check('휠: 회전 중 누르면 정지·한 칸에 맞춤', await sel() === braked && await page.$eval('#wheel .wcol[data-t=m]', (c) => Math.abs(c.scrollTop / 44 - Math.round(c.scrollTop / 44)) < 0.01), await sel());
+  await page.evaluate(() => { moveWheel($('#wheel .wcol[data-t=m]'), 60 * 3 + 17); moveWheel($('#wheel .wcol[data-t=h]'), 24 * 3 + 20); });
   await click('#wheel [data-col=m][data-step="-1"]');
   await page.evaluate(() => { const b = $('#wheel [data-col=h][data-step="1"]'); b.click(); b.click(); b.click(); });
   check('휠: 1분 감소·1시간 빠른 연속 증가·선택 강조', await sel() === '23:16' && await page.$$eval('#wheel .chosen', (items) => items.length === 2), await sel());

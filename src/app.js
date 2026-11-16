@@ -92,32 +92,37 @@ function openWheel(el) {
       c.querySelector('.chosen')?.classList.remove('chosen');
       c.children[selected]?.classList.add('chosen');
       clearTimeout(c.h);
-      if (!c.drag) c.h = setTimeout(() => recenter(c), 150);
+      c.scrolling = true;
+      c.h = setTimeout(() => { c.scrolling = false; if (!c.touch) recenter(c); }, 180);
     };
-    // 손가락 이동만큼만 움직여 관성 없이 멈추고, 가까운 숫자에 맞춘다.
-    c.onpointerdown = (e) => {
-      if (e.button !== 0) return;
+    // 빠른 회전은 브라우저의 기본 관성을 유지하고, 느린 조작만 한 칸에 맞춘다.
+    c.ontouchstart = (e) => {
       clearTimeout(c.h);
-      const item = e.target.closest('i');
-      c.drag = { id: e.pointerId, y: e.clientY, top: c.scrollTop, moved: false,
-        index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
-      c.style.scrollSnapType = 'none';
+      const p = e.touches[0], item = e.target.closest('i');
+      c.touch = { y: p.clientY, lastY: p.clientY, time: e.timeStamp, speed: 0, moved: false,
+        braking: !!c.scrolling, index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
     };
-    c.onpointermove = (e) => {
-      if (!c.drag || c.drag.id !== e.pointerId) return;
-      const delta = e.clientY - c.drag.y;
-      if (Math.abs(delta) > 5) { c.drag.moved = true; c.setPointerCapture(e.pointerId); }
-      c.scrollTop = c.drag.top - delta;
-      c.onscroll();
+    c.ontouchmove = (e) => {
+      if (!c.touch) return;
+      const y = e.touches[0].clientY, now = e.timeStamp;
+      const elapsed = Math.max(1, now - c.touch.time);
+      // 마지막의 아주 작은 이동 하나가 빠른 스와이프를 느린 조작으로 바꾸지 않게 한다.
+      c.touch.speed = Math.max(c.touch.speed * Math.exp(-elapsed / 100), Math.abs(y - c.touch.lastY) / elapsed);
+      c.touch.lastY = y; c.touch.time = now;
+      if (Math.abs(y - c.touch.y) > 5) c.touch.moved = true;
     };
-    const stop = (e) => {
-      if (!c.drag || c.drag.id !== e.pointerId) return;
-      const index = !c.drag.moved && c.drag.index != null ? c.drag.index : Math.round(c.scrollTop / W_ROW);
+    c.ontouchend = (e) => {
+      const touch = c.touch; c.touch = null;
+      if (!touch) return;
       c.ignoreClickUntil = performance.now() + 350;
-      c.drag = null; c.style.scrollSnapType = '';
-      moveWheel(c, index);
+      if (!touch.moved) {
+        moveWheel(c, touch.braking || touch.index == null ? Math.round(c.scrollTop / W_ROW) : touch.index);
+      } else if (touch.speed < 0.25 || e.timeStamp - touch.time > 120) {
+        moveWheel(c, Math.round(c.scrollTop / W_ROW));
+      }
+      // 빠르게 민 경우 scrollTop을 덮어쓰지 않아 기본 관성이 계속된다.
     };
-    c.onpointerup = stop; c.onpointercancel = stop; c.onlostpointercapture = stop;
+    c.ontouchcancel = () => { c.touch = null; };
     return () => { c.blk = W_REP >> 1; moveWheel(c, n * (W_REP >> 1) + sel); };
   };
   const goH = fill('h', hn, Math.min(Math.floor(cur / 60), hn - 1)), goM = fill('m', 60, cur % 60);
