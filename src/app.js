@@ -49,7 +49,6 @@ function openWheel(el) {
   if (!w) {
     w = document.createElement('div'); w.id = 'wheel';
     w.innerHTML = `<div class="wbox"><b class="wt"></b><div class="wcols"><div class="wcol" data-t="h"></div><b>:</b><div class="wcol" data-t="m"></div><div class="wbar"></div></div>
-      <div class="wfine">${['h', 'm'].map((t) => `<div><label>${t === 'h' ? '1시간씩' : '1분씩'}</label><button type="button" data-step="-1" data-col="${t}" aria-label="${t === 'h' ? '1시간' : '1분'} 줄이기">−</button><button type="button" data-step="1" data-col="${t}" aria-label="${t === 'h' ? '1시간' : '1분'} 늘리기">+</button></div>`).join('')}</div>
       <div class="row"><button data-w="clear">지우기</button><span class="sp"></span><button data-w="cancel">취소</button><button class="pri" data-w="ok">확인</button></div></div>`;
     document.body.appendChild(w);
     w.addEventListener('click', (e) => {
@@ -57,11 +56,6 @@ function openWheel(el) {
       if (it) {
         if (performance.now() < (it.parentNode.ignoreClickUntil || 0)) return;
         moveWheel(it.parentNode, Math.round(it.offsetTop / W_ROW) - 2); return;
-      }
-      const step = e.target.closest('[data-step]');
-      if (step) {
-        const c = w.querySelector(`.wcol[data-t=${step.dataset.col}]`);
-        moveWheel(c, Math.round(c.scrollTop / W_ROW) + +step.dataset.step); return;
       }
       if (e.target === w || (b && b.dataset.w === 'cancel')) return closeWheel();
       if (!b) return;
@@ -96,33 +90,51 @@ function openWheel(el) {
       c.h = setTimeout(() => { c.scrolling = false; if (!c.touch) recenter(c); }, 180);
     };
     // 빠른 회전은 브라우저의 기본 관성을 유지하고, 느린 조작만 한 칸에 맞춘다.
-    c.ontouchstart = (e) => {
+    if (c.startTouch) c.removeEventListener('touchstart', c.startTouch);
+    c.startTouch = (e) => {
       clearTimeout(c.h);
       const p = e.touches[0], item = e.target.closest('i');
-      c.touch = { y: p.clientY, lastY: p.clientY, time: e.timeStamp, speed: 0, moved: false,
+      c.touch = { y: p.clientY, lastY: p.clientY, time: e.timeStamp, speed: 0, moved: false, start: Math.round(c.scrollTop / W_ROW), mode: null,
         braking: !!c.scrolling, index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
     };
-    c.ontouchmove = (e) => {
+    c.addEventListener('touchstart', c.startTouch, { passive: true });
+    if (c.moveTouch) c.removeEventListener('touchmove', c.moveTouch);
+    c.moveTouch = (e) => {
       if (!c.touch) return;
       const y = e.touches[0].clientY, now = e.timeStamp;
       const elapsed = Math.max(1, now - c.touch.time);
       // 마지막의 아주 작은 이동 하나가 빠른 스와이프를 느린 조작으로 바꾸지 않게 한다.
       c.touch.speed = Math.max(c.touch.speed * Math.exp(-elapsed / 100), Math.abs(y - c.touch.lastY) / elapsed);
       c.touch.lastY = y; c.touch.time = now;
-      if (Math.abs(y - c.touch.y) > 5) c.touch.moved = true;
+      const distance = c.touch.y - y;
+      if (Math.abs(distance) > 5) c.touch.moved = true;
+      // 처음 움직인 속도로 구분해, 느린 한 번의 조작은 이동 거리에 상관없이 한 칸만 이동.
+      if (!c.touch.mode && c.touch.moved) c.touch.mode = c.touch.speed <= 0.28 ? 'precise' : 'native';
+      if (c.touch.mode === 'precise' && e.cancelable) {
+        e.preventDefault();
+        moveWheel(c, c.touch.start + (Math.abs(distance) >= 8 ? Math.sign(distance) : 0));
+      }
     };
-    c.ontouchend = (e) => {
+    c.addEventListener('touchmove', c.moveTouch, { passive: false });
+    if (c.endTouch) c.removeEventListener('touchend', c.endTouch);
+    c.endTouch = (e) => {
       const touch = c.touch; c.touch = null;
       if (!touch) return;
       c.ignoreClickUntil = performance.now() + 350;
       if (!touch.moved) {
         moveWheel(c, touch.braking || touch.index == null ? Math.round(c.scrollTop / W_ROW) : touch.index);
+      } else if (touch.mode === 'precise') {
+        const distance = touch.y - touch.lastY;
+        moveWheel(c, touch.start + (Math.abs(distance) >= 8 ? Math.sign(distance) : 0));
       } else if (touch.speed < 0.25 || e.timeStamp - touch.time > 120) {
         moveWheel(c, Math.round(c.scrollTop / W_ROW));
       }
       // 빠르게 민 경우 scrollTop을 덮어쓰지 않아 기본 관성이 계속된다.
     };
-    c.ontouchcancel = () => { c.touch = null; };
+    c.addEventListener('touchend', c.endTouch);
+    if (c.cancelTouch) c.removeEventListener('touchcancel', c.cancelTouch);
+    c.cancelTouch = () => { c.touch = null; };
+    c.addEventListener('touchcancel', c.cancelTouch);
     return () => { c.blk = W_REP >> 1; moveWheel(c, n * (W_REP >> 1) + sel); };
   };
   const goH = fill('h', hn, Math.min(Math.floor(cur / 60), hn - 1)), goM = fill('m', 60, cur % 60);
