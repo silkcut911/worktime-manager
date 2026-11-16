@@ -128,11 +128,16 @@ input[data-wheel] { cursor: pointer; caret-color: transparent; }
 #wheel .wbox { position: absolute; background: #fff; width: 220px; border-radius: 12px; padding: 6px 10px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
 #wheel .wt { display: block; font-size: 13px; }
 #wheel .wcols { position: relative; display: flex; align-items: center; justify-content: center; gap: 2px; margin-bottom: 6px; font-size: 22px; }
-#wheel .wcol { position: relative; height: 220px; width: 68px; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
+#wheel .wcol { position: relative; height: 220px; width: 68px; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; touch-action: none; user-select: none; }
 #wheel .wcol::-webkit-scrollbar { display: none; }
 #wheel .wcol::before, #wheel .wcol::after { content: ''; display: block; height: 88px; }
-#wheel .wcol i { display: block; height: 44px; line-height: 44px; text-align: center; font-style: normal; font-weight: 600; scroll-snap-align: center; }
-#wheel .wbar { position: absolute; left: 0; right: 0; top: 88px; height: 44px; border-top: 2px solid var(--navy); border-bottom: 2px solid var(--navy); background: rgba(31,58,95,.07); pointer-events: none; }
+#wheel .wcol i { display: block; height: 44px; line-height: 44px; text-align: center; font-style: normal; font-weight: 400; color: #a3aab4; scroll-snap-align: center; }
+#wheel .wcol i.chosen { color: var(--navy); font-size: 28px; font-weight: 800; }
+#wheel .wbar { position: absolute; left: 0; right: 0; top: 88px; height: 44px; border-radius: 8px; background: rgba(31,58,95,.05); pointer-events: none; }
+#wheel .wfine { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+#wheel .wfine > div { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#wheel .wfine label { grid-column: span 2; text-align: center; font-size: 11px; color: var(--muted); }
+#wheel .wfine button { height: 40px; padding: 0; font-size: 24px; color: var(--navy); background: #eef2f7; border: 1px solid #d4dce7; border-radius: 8px; touch-action: manipulation; }
 #wheel .row { gap: 4px; flex-wrap: nowrap; }
 #wheel .row button { padding: 6px 11px; font-size: 15px; }
 .tabs2 { display: flex; gap: 6px; margin-bottom: 8px; }

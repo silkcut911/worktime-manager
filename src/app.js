@@ -38,6 +38,10 @@ function readTime(id) {
 // 휠 선택창(누른 칸 바로 아래, 자리가 없으면 위): 위아래로 밀어 돌리고 가운데 줄 값이 선택됨. 끝에서 다시 처음으로 이어짐(59 다음 00)
 // [확인]하면 칸에 넣고 input 이벤트를 보내 숫자 입력 때와 똑같이 자동 채우기·미리보기가 돌아감
 const W_ROW = 44, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
+function moveWheel(c, index) {
+  c.scrollTo({ top: index * W_ROW, behavior: 'instant' });
+  c.onscroll(); // 확인을 바로 눌러도 분 경계에 따른 시 변경이 먼저 반영됨
+}
 function openWheel(el) {
   const dur = !!el.dataset.dur, hn = dur ? 10 : 24;
   const v = readTime(el.id), cur = v == null || Number.isNaN(v) ? (dur ? 0 : 540) : v;
@@ -45,11 +49,20 @@ function openWheel(el) {
   if (!w) {
     w = document.createElement('div'); w.id = 'wheel';
     w.innerHTML = `<div class="wbox"><b class="wt"></b><div class="wcols"><div class="wcol" data-t="h"></div><b>:</b><div class="wcol" data-t="m"></div><div class="wbar"></div></div>
+      <div class="wfine">${['h', 'm'].map((t) => `<div><label>${t === 'h' ? '1시간씩' : '1분씩'}</label><button type="button" data-step="-1" data-col="${t}" aria-label="${t === 'h' ? '1시간' : '1분'} 줄이기">−</button><button type="button" data-step="1" data-col="${t}" aria-label="${t === 'h' ? '1시간' : '1분'} 늘리기">+</button></div>`).join('')}</div>
       <div class="row"><button data-w="clear">지우기</button><span class="sp"></span><button data-w="cancel">취소</button><button class="pri" data-w="ok">확인</button></div></div>`;
     document.body.appendChild(w);
     w.addEventListener('click', (e) => {
       const b = e.target.closest('[data-w]'), it = e.target.closest('.wcol i');
-      if (it) { it.parentNode.scrollTo({ top: it.offsetTop - 2 * W_ROW, behavior: 'smooth' }); return; }
+      if (it) {
+        if (performance.now() < (it.parentNode.ignoreClickUntil || 0)) return;
+        moveWheel(it.parentNode, Math.round(it.offsetTop / W_ROW) - 2); return;
+      }
+      const step = e.target.closest('[data-step]');
+      if (step) {
+        const c = w.querySelector(`.wcol[data-t=${step.dataset.col}]`);
+        moveWheel(c, Math.round(c.scrollTop / W_ROW) + +step.dataset.step); return;
+      }
       if (e.target === w || (b && b.dataset.w === 'cancel')) return closeWheel();
       if (!b) return;
       const t = w.target;
@@ -62,18 +75,50 @@ function openWheel(el) {
   w.querySelector('.wt').textContent = (el.parentNode.querySelector('label') || {}).textContent || '시간';
   const fill = (t, n, sel) => {
     const c = w.querySelector(`.wcol[data-t=${t}]`);
+    clearTimeout(c.h);
     c.dataset.n = n;
     c.innerHTML = Array.from({ length: n * W_REP }, (_, i) => `<i>${t === 'm' ? WT.pad(i % n) : i % n}</i>`).join('');
     c.onscroll = () => {
       // 분이 59 → 00 으로 넘어가면 시 +1, 00 → 59 면 시 −1: 분 목록은 60개씩 반복되므로 몇 번째 묶음인지가 바뀌면 넘어간 것
       if (t === 'm') {
         const b = Math.floor(Math.round(c.scrollTop / W_ROW) / n);
-        if (b !== c.blk) w.querySelector('.wcol[data-t=h]').scrollBy({ top: (b - c.blk) * W_ROW, behavior: 'smooth' });
+        if (b !== c.blk) {
+          const hours = w.querySelector('.wcol[data-t=h]');
+          moveWheel(hours, Math.round(hours.scrollTop / W_ROW) + b - c.blk);
+        }
         c.blk = b;
       }
-      clearTimeout(c.h); c.h = setTimeout(() => recenter(c), 150);
+      const selected = Math.round(c.scrollTop / W_ROW);
+      c.querySelector('.chosen')?.classList.remove('chosen');
+      c.children[selected]?.classList.add('chosen');
+      clearTimeout(c.h);
+      if (!c.drag) c.h = setTimeout(() => recenter(c), 150);
     };
-    return () => { c.scrollTop = (n * (W_REP >> 1) + sel) * W_ROW; c.blk = W_REP >> 1; };
+    // 손가락 이동만큼만 움직여 관성 없이 멈추고, 가까운 숫자에 맞춘다.
+    c.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      clearTimeout(c.h);
+      const item = e.target.closest('i');
+      c.drag = { id: e.pointerId, y: e.clientY, top: c.scrollTop, moved: false,
+        index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
+      c.style.scrollSnapType = 'none';
+    };
+    c.onpointermove = (e) => {
+      if (!c.drag || c.drag.id !== e.pointerId) return;
+      const delta = e.clientY - c.drag.y;
+      if (Math.abs(delta) > 5) { c.drag.moved = true; c.setPointerCapture(e.pointerId); }
+      c.scrollTop = c.drag.top - delta;
+      c.onscroll();
+    };
+    const stop = (e) => {
+      if (!c.drag || c.drag.id !== e.pointerId) return;
+      const index = !c.drag.moved && c.drag.index != null ? c.drag.index : Math.round(c.scrollTop / W_ROW);
+      c.ignoreClickUntil = performance.now() + 350;
+      c.drag = null; c.style.scrollSnapType = '';
+      moveWheel(c, index);
+    };
+    c.onpointerup = stop; c.onpointercancel = stop; c.onlostpointercapture = stop;
+    return () => { c.blk = W_REP >> 1; moveWheel(c, n * (W_REP >> 1) + sel); };
   };
   const goH = fill('h', hn, Math.min(Math.floor(cur / 60), hn - 1)), goM = fill('m', 60, cur % 60);
   w.style.display = 'block';
