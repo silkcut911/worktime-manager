@@ -89,12 +89,12 @@ function openWheel(el) {
       c.scrolling = true;
       c.h = setTimeout(() => { c.scrolling = false; if (!c.touch) recenter(c); }, 180);
     };
-    // 빠른 회전은 브라우저의 기본 관성을 유지하고, 느린 조작만 한 칸에 맞춘다.
+    // 끌기는 거리만큼 움직이고, 손을 튕겨 놓은 경우에만 기본 관성을 유지한다.
     if (c.startTouch) c.removeEventListener('touchstart', c.startTouch);
     c.startTouch = (e) => {
       clearTimeout(c.h);
       const p = e.touches[0], item = e.target.closest('i');
-      c.touch = { y: p.clientY, lastY: p.clientY, time: e.timeStamp, speed: 0, moved: false, start: Math.round(c.scrollTop / W_ROW), mode: null,
+      c.touch = { y: p.clientY, lastY: p.clientY, top: c.scrollTop, time: e.timeStamp, started: e.timeStamp, speed: 0, moved: false, samples: [{ y: p.clientY, time: e.timeStamp }],
         braking: !!c.scrolling, index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
     };
     c.addEventListener('touchstart', c.startTouch, { passive: true });
@@ -102,20 +102,14 @@ function openWheel(el) {
     c.moveTouch = (e) => {
       if (!c.touch) return;
       const y = e.touches[0].clientY, now = e.timeStamp;
-      const elapsed = Math.max(1, now - c.touch.time);
-      // 마지막의 아주 작은 이동 하나가 빠른 스와이프를 느린 조작으로 바꾸지 않게 한다.
-      c.touch.speed = Math.max(c.touch.speed * Math.exp(-elapsed / 100), Math.abs(y - c.touch.lastY) / elapsed);
+      const samples = c.touch.samples;
+      samples.push({ y, time: now });
+      while (samples.length > 2 && now - samples[0].time > 80) samples.shift();
+      c.touch.speed = Math.abs(y - samples[0].y) / Math.max(1, now - samples[0].time);
       c.touch.lastY = y; c.touch.time = now;
-      const distance = c.touch.y - y;
-      if (Math.abs(distance) > 5) c.touch.moved = true;
-      // 처음 움직인 속도로 구분해, 느린 한 번의 조작은 이동 거리에 상관없이 한 칸만 이동.
-      if (!c.touch.mode && c.touch.moved) c.touch.mode = c.touch.speed <= 0.28 ? 'precise' : 'native';
-      if (c.touch.mode === 'precise' && e.cancelable) {
-        e.preventDefault();
-        moveWheel(c, c.touch.start + (Math.abs(distance) >= 8 ? Math.sign(distance) : 0));
-      }
+      if (Math.abs(c.touch.y - y) > 5) c.touch.moved = true;
     };
-    c.addEventListener('touchmove', c.moveTouch, { passive: false });
+    c.addEventListener('touchmove', c.moveTouch, { passive: true });
     if (c.endTouch) c.removeEventListener('touchend', c.endTouch);
     c.endTouch = (e) => {
       const touch = c.touch; c.touch = null;
@@ -123,13 +117,14 @@ function openWheel(el) {
       c.ignoreClickUntil = performance.now() + 350;
       if (!touch.moved) {
         moveWheel(c, touch.braking || touch.index == null ? Math.round(c.scrollTop / W_ROW) : touch.index);
-      } else if (touch.mode === 'precise') {
-        const distance = touch.y - touch.lastY;
-        moveWheel(c, touch.start + (Math.abs(distance) >= 8 ? Math.sign(distance) : 0));
-      } else if (touch.speed < 0.25 || e.timeStamp - touch.time > 120) {
-        moveWheel(c, Math.round(c.scrollTop / W_ROW));
+      } else {
+        const duration = e.timeStamp - touch.started;
+        const average = Math.abs(touch.y - touch.lastY) / Math.max(1, touch.time - touch.started);
+        const flick = e.timeStamp - touch.time < 90 && touch.speed >= 0.2 &&
+          (duration <= 240 || touch.speed > average * 1.35);
+        // 오래 끌거나 잠깐 멈춘 뒤 놓으면 관성 없이 가까운 숫자에 맞춘다.
+        if (!flick) moveWheel(c, Math.round((touch.top + touch.y - touch.lastY) / W_ROW));
       }
-      // 빠르게 민 경우 scrollTop을 덮어쓰지 않아 기본 관성이 계속된다.
     };
     c.addEventListener('touchend', c.endTouch);
     if (c.cancelTouch) c.removeEventListener('touchcancel', c.cancelTouch);

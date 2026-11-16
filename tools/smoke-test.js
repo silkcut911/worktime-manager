@@ -255,7 +255,7 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   check('휠: 분 59 아래는 00, 시도 1 올라감', (await sel()) === '1:0', await sel());
   await click('#wheel [data-w=cancel]');
   check('휠 취소 → 그대로', (await page.$eval('#d-ex', (e) => e.value)) === '1:40');
-  // 실제 터치로 속도별 회전·한 칸 제한·정지·시간 경계를 확인한다.
+  // 실제 터치로 거리별 끌기·속도별 튕기기·정지·시간 경계를 확인한다.
   await click('#d-out');
   const minuteBox = await page.$eval('#wheel .wcol[data-t=m]', (c) => { const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
   const touch = await page.createCDPSession();
@@ -293,44 +293,69 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await wait(80); const braked = await sel(); await wait(350);
   check('휠: 회전 중 누르면 정지·한 칸에 맞춤', await sel() === braked && await page.$eval('#wheel .wcol[data-t=m]', (c) => Math.abs(c.scrollTop / 44 - Math.round(c.scrollTop / 44)) < 0.01), await sel());
-  const slowSwipe = async (distance, column = 'm') => {
+  const slowSwipe = async (distance, column = 'm', hold = false) => {
     const box = await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => { const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y - Math.sign(distance) * 66 }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y - distance / 2 }] });
     for (let i = 1; i <= 12; i++) {
       await wait(80);
-      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x, y: box.y - Math.sign(distance) * 66 + distance * i / 12 }] });
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x, y: box.y - distance / 2 + distance * i / 12 }] });
     }
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(250);
+    let held = true;
+    if (hold) {
+      await wait(80);
+      const before = await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => c.scrollTop);
+      await wait(180);
+      held = before === await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => c.scrollTop);
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await wait(50); const atRelease = await sel(); await wait(250);
+    return held && atRelease === await sel();
   };
   await page.evaluate(() => { moveWheel($('#wheel .wcol[data-t=m]'), 60 * 3 + 17); moveWheel($('#wheel .wcol[data-t=h]'), 24 * 3 + 20); });
   await wait(250);
-  await slowSwipe(-132);
-  check('휠: 느리게 세 칸 길이를 밀어도 한 칸만 증가', await sel() === '20:18', await sel());
-  await slowSwipe(132);
-  check('휠: 반대 방향도 한 칸만 감소', await sel() === '20:17', await sel());
-  await slowSwipe(-132);
-  check('휠: 손을 떼고 다시 밀면 다음 한 칸 이동·선택 강조', await sel() === '20:18' && await page.$$eval('#wheel .chosen', (items) => items.length === 2), await sel());
-  await slowSwipe(-132, 'h');
-  check('휠: 시간도 길게 천천히 밀면 한 칸만 증가', await sel() === '21:18', await sel());
-  await slowSwipe(132, 'h');
-  check('휠: 시간도 반대 방향 한 칸 감소', await sel() === '20:18', await sel());
+  await slowSwipe(-176);
+  check('휠: 천천히 끌면 거리만큼 네 칸 이동', await sel() === '20:21', await sel());
+  await slowSwipe(176);
+  check('휠: 반대로 끌어 네 칸 복귀', await sel() === '20:17', await sel());
+  await slowSwipe(-44);
+  check('휠: 짧게 끌면 한 칸 이동·선택 강조', await sel() === '20:18' && await page.$$eval('#wheel .chosen', (items) => items.length === 2), await sel());
+  await slowSwipe(-176, 'h');
+  check('휠: 시간도 거리만큼 네 칸 이동·24시 순환', await sel() === '0:18', await sel());
+  await slowSwipe(176, 'h');
+  check('휠: 시간도 반대 방향 네 칸 복귀', await sel() === '20:18', await sel());
+  const held = await slowSwipe(-88, 'm', true);
+  check('휠: 끌다가 손을 멈추면 정지·놓아도 관성 없음', held && await sel() === '20:20', await sel());
+  const gentleFlick = async (distance, interval) => {
+    const box = await page.$eval('#wheel .wcol[data-t=m]', (c) => { const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.addEventListener('touchend', () => { window.wheelReleased = c.scrollTop; }, { once: true }); });
+    const timestamp = Date.now() / 1000;
+    await touch.send('Input.dispatchTouchEvent', { timestamp, type: 'touchStart', touchPoints: [{ x: box.x, y: box.y + distance / 2 }] });
+    for (let i = 1; i <= 4; i++) {
+      await wait(interval * 1000);
+      await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + i * interval, type: 'touchMove', touchPoints: [{ x: box.x, y: box.y + distance / 2 - distance * i / 4 }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + 4 * interval + 0.001, type: 'touchEnd', touchPoints: [] });
+  };
   const mediumStart = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop);
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: minuteBox.x, y: minuteBox.y + 66 }] });
-  for (let i = 1; i <= 4; i++) {
-    await wait(70);
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: minuteBox.x, y: minuteBox.y + 66 - i * 33 }] });
-  }
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(500);
+  await gentleFlick(88, 0.04); await wait(300);
   const mediumDistance = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop) - mediumStart;
-  check('휠: 중간 속도는 한 칸 제한 없이 빠른 회전보다 천천히 이동', mediumDistance > 44 && mediumDistance < fastDistance, `${mediumDistance} < ${fastDistance}`);
+  check('휠: 중간 속도 튕기기는 빠른 튕기기보다 천천히 회전', mediumDistance > 44 && mediumDistance < fastDistance, `${mediumDistance} < ${fastDistance}`);
+  await wait(500);
+  const lightStart = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop);
+  await gentleFlick(44, 0.035);
+  const lightRelease = await page.evaluate(() => window.wheelReleased);
+  await wait(300);
+  const lightEnd = await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop);
+  check('휠: 살짝 튕겨도 느린 관성 회전 유지', lightEnd > lightRelease + 2 && lightEnd - lightStart < fastDistance, `${lightRelease} → ${lightEnd}`);
+  await wait(300);
   check('휠: 아래 −/+ 버튼 제거', await page.$eval('#wheel', (w) => !w.querySelector('[data-step], .wfine')));
   await click('#wheel [data-w=cancel]');
   await page.evaluate(() => { setTime('d-out', 23 * 60 + 59); openWheel($('#d-out')); }); await wait(250);
-  await slowSwipe(-132);
+  await slowSwipe(-44);
   await click('#wheel [data-w=ok]');
   check('휠: 23:59에서 한 칸 증가 후 바로 확인 → 0:00', await page.$eval('#d-out', (e) => e.value === '0:00'));
   await click('#d-out'); await wait(250);
-  await slowSwipe(132);
+  await slowSwipe(44);
   await click('#wheel [data-w=ok]');
   check('휠: 0:00에서 한 칸 감소 후 바로 확인 → 23:59', await page.$eval('#d-out', (e) => e.value === '23:59'));
   await click('#d-ex');
