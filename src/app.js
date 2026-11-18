@@ -38,10 +38,28 @@ function readTime(id) {
 // 휠 선택창(누른 칸 바로 아래, 자리가 없으면 위): 위아래로 밀어 돌리고 가운데 줄 값이 선택됨. 끝에서 다시 처음으로 이어짐(59 다음 00)
 // [확인]하면 칸에 넣고 input 이벤트를 보내 숫자 입력 때와 똑같이 자동 채우기·미리보기가 돌아감
 const W_ROW = 44, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
+function stopWheelCoast(c) {
+  cancelAnimationFrame(c.coastFrame);
+  c.coastFrame = 0;
+}
+function coastWheel(c, velocity) {
+  const speed = Math.min(2.5, Math.abs(velocity));
+  const rows = Math.min(20, Math.max(1, Math.round(speed * speed / (2 * 0.0035 * W_ROW))));
+  const from = c.scrollTop, target = (Math.round(from / W_ROW) + Math.sign(velocity) * rows) * W_ROW;
+  const duration = Math.max(160, speed / 0.0035), start = performance.now();
+  const frame = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    c.scrollTop = from + (target - from) * (1 - (1 - p) * (1 - p));
+    c.onscroll();
+    if (p < 1) c.coastFrame = requestAnimationFrame(frame);
+    else { c.coastFrame = 0; scheduleWheelSnap(c); }
+  };
+  c.coastFrame = requestAnimationFrame(frame);
+}
 function scheduleWheelSnap(c) {
   clearTimeout(c.h);
   c.h = setTimeout(() => {
-    if (c.touch) return;
+    if (c.touch || c.coastFrame) return;
     c.scrolling = false;
     recenter(c);
   }, 150);
@@ -78,6 +96,8 @@ function openWheel(el) {
   const fill = (t, n, sel) => {
     const c = w.querySelector(`.wcol[data-t=${t}]`);
     clearTimeout(c.h);
+    stopWheelCoast(c);
+    c.style.scrollSnapType = '';
     c.dataset.n = n;
     c.innerHTML = Array.from({ length: n * W_REP }, (_, i) => `<i>${t === 'm' ? WT.pad(i % n) : i % n}</i>`).join('');
     c.onscroll = () => {
@@ -96,10 +116,12 @@ function openWheel(el) {
       c.scrolling = true;
       scheduleWheelSnap(c);
     };
-    // 끌기는 거리만큼 움직이고, 손을 튕겨 놓은 경우에만 기본 관성을 유지한다.
+    // 끌기는 거리 그대로, 튕기기는 기기 기본 관성 대신 최대 20칸의 감속 회전.
     if (c.startTouch) c.removeEventListener('touchstart', c.startTouch);
     c.startTouch = (e) => {
       clearTimeout(c.h);
+      stopWheelCoast(c);
+      c.style.scrollSnapType = 'none';
       const p = e.touches[0], item = e.target.closest('i');
       c.touch = { y: p.clientY, lastY: p.clientY, top: c.scrollTop, time: e.timeStamp, started: e.timeStamp, speed: 0, moved: false, samples: [{ y: p.clientY, time: e.timeStamp }],
         braking: !!c.scrolling, index: item ? Math.round(item.offsetTop / W_ROW) - 2 : null };
@@ -108,6 +130,7 @@ function openWheel(el) {
     if (c.moveTouch) c.removeEventListener('touchmove', c.moveTouch);
     c.moveTouch = (e) => {
       if (!c.touch) return;
+      e.preventDefault();
       const y = e.touches[0].clientY, now = e.timeStamp;
       const samples = c.touch.samples;
       samples.push({ y, time: now });
@@ -115,8 +138,10 @@ function openWheel(el) {
       c.touch.speed = Math.abs(y - samples[0].y) / Math.max(1, now - samples[0].time);
       c.touch.lastY = y; c.touch.time = now;
       if (Math.abs(c.touch.y - y) > 5) c.touch.moved = true;
+      c.scrollTop = c.touch.top + c.touch.y - y;
+      c.onscroll();
     };
-    c.addEventListener('touchmove', c.moveTouch, { passive: true });
+    c.addEventListener('touchmove', c.moveTouch, { passive: false });
     if (c.endTouch) c.removeEventListener('touchend', c.endTouch);
     c.endTouch = (e) => {
       const touch = c.touch; c.touch = null;
@@ -131,6 +156,10 @@ function openWheel(el) {
           (duration <= 240 || touch.speed > average * 1.35);
         // 오래 끌거나 잠깐 멈춘 뒤 놓으면 관성 없이 가까운 숫자에 맞춘다.
         if (!flick) moveWheel(c, Math.round((touch.top + touch.y - touch.lastY) / W_ROW));
+        else {
+          const samples = touch.samples;
+          coastWheel(c, Math.sign(samples[0].y - touch.lastY) * touch.speed);
+        }
       }
       // touchend 직후의 브라우저 스냅이 어긋나도, 마지막 움직임 뒤 다시 정확히 맞춘다.
       scheduleWheelSnap(c);
@@ -164,11 +193,12 @@ function recenter(c) {
     c.blk = W_REP >> 1; // 묶음만 옮긴 것이라 시는 그대로
     moveWheel(c, want);
   }
+  c.style.scrollSnapType = '';
 }
 function closeWheel() {
   const w = $('#wheel');
   if (w) {
-    w.querySelectorAll('.wcol').forEach((c) => { clearTimeout(c.h); c.touch = null; c.scrolling = false; });
+    w.querySelectorAll('.wcol').forEach((c) => { clearTimeout(c.h); stopWheelCoast(c); c.touch = null; c.scrolling = false; c.style.scrollSnapType = ''; });
     w.style.display = 'none';
   }
 }

@@ -381,6 +381,25 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await wait(400);
   check('휠: 터치 취소 후에도 중앙 정렬', await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop % 44 === 0));
   await page.$eval('#wheel .wcol[data-t=m]', (c) => { c.style.scrollSnapType = ''; });
+  for (const column of ['h', 'm']) for (const direction of [-1, 1]) {
+    const box = await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => {
+      moveWheel(c, +c.dataset.n * 3 + Math.floor(+c.dataset.n / 2));
+      const r = c.getBoundingClientRect();
+      c.addEventListener('touchend', () => { c.testRelease = c.scrollTop; }, { once: true });
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    const timestamp = Date.now() / 1000;
+    await touch.send('Input.dispatchTouchEvent', { timestamp, type: 'touchStart', touchPoints: [{ x: box.x, y: box.y + direction * 66 }] });
+    for (let i = 1; i <= 4; i++) {
+      await wait(16);
+      await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + i * 0.003, type: 'touchMove', touchPoints: [{ x: box.x, y: box.y + direction * (66 - i * 33) }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { timestamp: timestamp + 0.013, type: 'touchEnd', touchPoints: [] });
+    await page.waitForFunction((column) => !document.querySelector(`#wheel .wcol[data-t=${column}]`).coastFrame, {}, column);
+    const rows = await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => (c.scrollTop - c.testRelease) / 44);
+    check(`휠: ${column} ${direction > 0 ? '정방향' : '역방향'} 강한 튕기기도 관성 약 20칸 제한`, Math.sign(rows) === direction && Math.abs(rows) >= 19 && Math.abs(rows) <= 20.5, String(rows));
+    await wait(200);
+  }
   await click('#wheel [data-w=cancel]');
   await page.evaluate(() => { setTime('d-out', 23 * 60 + 59); openWheel($('#d-out')); }); await wait(250);
   await slowSwipe(-44);
