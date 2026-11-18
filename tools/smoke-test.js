@@ -349,6 +349,38 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   check('휠: 살짝 튕겨도 느린 관성 회전 유지', lightEnd > lightRelease + 2 && lightEnd - lightStart < fastDistance, `${lightRelease} → ${lightEnd}`);
   await wait(300);
   check('휠: 아래 −/+ 버튼 제거', await page.$eval('#wheel', (w) => !w.querySelector('[data-step], .wfine')));
+  // 브라우저의 기본 스냅 없이도 같은 묶음 안의 어긋남을 스스로 보정해야 한다.
+  for (const column of ['h', 'm']) {
+    let aligned = true, delayed = true;
+    for (const offset of [13, -17, 19]) {
+      const expected = await page.evaluate(({ column, offset }) => {
+        const c = $(`#wheel .wcol[data-t=${column}]`);
+        c.style.scrollSnapType = 'none';
+        c.scrollTop = Math.round(c.scrollTop / 44) * 44 + offset;
+        c.onscroll();
+        return [wheelVal($('#wheel'), 'h'), wheelVal($('#wheel'), 'm')].join(':');
+      }, { column, offset });
+      await wait(70);
+      delayed = delayed && await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => Math.abs(c.scrollTop / 44 - Math.round(c.scrollTop / 44)) > 0.1);
+      await wait(180);
+      aligned = aligned && await sel() === expected && await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => {
+        const r = c.getBoundingClientRect(), s = c.querySelector('.chosen').getBoundingClientRect();
+        return Math.abs(c.scrollTop - Math.round(c.scrollTop / 44) * 44) < 0.1 && Math.abs((r.top + r.bottom - s.top - s.bottom) / 2) < 1;
+      });
+    }
+    check('휠: ' + column + ' 같은 묶음의 반복 어긋남도 0.15초 뒤 중앙 정렬·값 유지', delayed && aligned);
+    await page.$eval(`#wheel .wcol[data-t=${column}]`, (c) => { c.style.scrollSnapType = ''; });
+  }
+  await page.evaluate(() => {
+    const c = $('#wheel .wcol[data-t=m]'); c.style.scrollSnapType = 'none';
+    c.scrollTop += 13; c.touch = {}; c.onscroll();
+  });
+  await wait(400);
+  check('휠: 손을 대고 있는 동안 정렬하지 않음', await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop % 44 > 1));
+  await page.evaluate(() => { const c = $('#wheel .wcol[data-t=m]'); c.cancelTouch(); });
+  await wait(400);
+  check('휠: 터치 취소 후에도 중앙 정렬', await page.$eval('#wheel .wcol[data-t=m]', (c) => c.scrollTop % 44 === 0));
+  await page.$eval('#wheel .wcol[data-t=m]', (c) => { c.style.scrollSnapType = ''; });
   await click('#wheel [data-w=cancel]');
   await page.evaluate(() => { setTime('d-out', 23 * 60 + 59); openWheel($('#d-out')); }); await wait(250);
   await slowSwipe(-44);

@@ -38,6 +38,14 @@ function readTime(id) {
 // 휠 선택창(누른 칸 바로 아래, 자리가 없으면 위): 위아래로 밀어 돌리고 가운데 줄 값이 선택됨. 끝에서 다시 처음으로 이어짐(59 다음 00)
 // [확인]하면 칸에 넣고 input 이벤트를 보내 숫자 입력 때와 똑같이 자동 채우기·미리보기가 돌아감
 const W_ROW = 44, W_REP = 7; // 한 줄 높이(px), 목록 반복 횟수
+function scheduleWheelSnap(c) {
+  clearTimeout(c.h);
+  c.h = setTimeout(() => {
+    if (c.touch) return;
+    c.scrolling = false;
+    recenter(c);
+  }, 150);
+}
 function moveWheel(c, index) {
   c.scrollTo({ top: index * W_ROW, behavior: 'instant' });
   c.onscroll(); // 확인을 바로 눌러도 분 경계에 따른 시 변경이 먼저 반영됨
@@ -85,9 +93,8 @@ function openWheel(el) {
       const selected = Math.round(c.scrollTop / W_ROW);
       c.querySelector('.chosen')?.classList.remove('chosen');
       c.children[selected]?.classList.add('chosen');
-      clearTimeout(c.h);
       c.scrolling = true;
-      c.h = setTimeout(() => { c.scrolling = false; if (!c.touch) recenter(c); }, 180);
+      scheduleWheelSnap(c);
     };
     // 끌기는 거리만큼 움직이고, 손을 튕겨 놓은 경우에만 기본 관성을 유지한다.
     if (c.startTouch) c.removeEventListener('touchstart', c.startTouch);
@@ -125,10 +132,12 @@ function openWheel(el) {
         // 오래 끌거나 잠깐 멈춘 뒤 놓으면 관성 없이 가까운 숫자에 맞춘다.
         if (!flick) moveWheel(c, Math.round((touch.top + touch.y - touch.lastY) / W_ROW));
       }
+      // touchend 직후의 브라우저 스냅이 어긋나도, 마지막 움직임 뒤 다시 정확히 맞춘다.
+      scheduleWheelSnap(c);
     };
     c.addEventListener('touchend', c.endTouch);
     if (c.cancelTouch) c.removeEventListener('touchcancel', c.cancelTouch);
-    c.cancelTouch = () => { c.touch = null; };
+    c.cancelTouch = () => { c.touch = null; scheduleWheelSnap(c); };
     c.addEventListener('touchcancel', c.cancelTouch);
     return () => { c.blk = W_REP >> 1; moveWheel(c, n * (W_REP >> 1) + sel); };
   };
@@ -144,13 +153,25 @@ function wheelVal(w, t) {
   const c = w.querySelector(`.wcol[data-t=${t}]`);
   return Math.round(c.scrollTop / W_ROW) % +c.dataset.n;
 }
-// 멈추면 같은 값의 가운데 묶음으로 옮겨 놓아 계속 돌릴 수 있게 함
+// 멈추면 숫자를 정확히 중앙에 맞추고 같은 값의 가운데 묶음으로 옮겨 계속 돌릴 수 있게 함
 function recenter(c) {
+  c.onscroll(); // 바로 확인하거나 분 경계에서 멈춰도 시간 올림·내림을 먼저 반영
+  c.scrolling = false;
   const n = +c.dataset.n, i = Math.round(c.scrollTop / W_ROW);
   const want = n * (W_REP >> 1) + (i % n);
-  if (Math.abs(i - want) >= n) { c.scrollTop = want * W_ROW; c.blk = W_REP >> 1; } // 묶음만 옮긴 것이라 시는 그대로
+  clearTimeout(c.h);
+  if (Math.abs(c.scrollTop - want * W_ROW) > 0.01) {
+    c.blk = W_REP >> 1; // 묶음만 옮긴 것이라 시는 그대로
+    moveWheel(c, want);
+  }
 }
-function closeWheel() { const w = $('#wheel'); if (w) w.style.display = 'none'; }
+function closeWheel() {
+  const w = $('#wheel');
+  if (w) {
+    w.querySelectorAll('.wcol').forEach((c) => { clearTimeout(c.h); c.touch = null; c.scrolling = false; });
+    w.style.display = 'none';
+  }
+}
 
 function load() {
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
